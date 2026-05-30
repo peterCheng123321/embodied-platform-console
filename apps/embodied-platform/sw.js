@@ -1,0 +1,30 @@
+const CACHE = 'embodied-platform-v11';
+const ASSETS = [
+  './index.html',
+  './assets/embodied-platform.css?v=11',
+  './assets/embodied-platform.js?v=11',
+  './assets/manifest.webmanifest',
+  './assets/icon.svg',
+  './fixtures/demo-state.json',
+];
+
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) => key.startsWith('embodied-platform-') && key !== CACHE)
+          .map((key) => caches.delete(key)),
+      ))
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+});

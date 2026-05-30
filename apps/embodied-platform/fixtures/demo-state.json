@@ -1,0 +1,139 @@
+{
+  "datasets": [
+    {
+      "id": "ds_demo",
+      "name": "warehouse-pick-v1",
+      "modality": "vision_language_action",
+      "robot_type": "mobile_manipulator",
+      "storage_uri": "file:///robot-runs/warehouse-pick-v1",
+      "description": "机器人单元 A 的抓取与放置片段。",
+      "episode_count": 12,
+      "created_at": "2026-05-30T00:00:00+00:00"
+    }
+  ],
+  "episodes": [
+    {
+      "id": "ep_demo",
+      "dataset_id": "ds_demo",
+      "episode_id": "episode-000042",
+      "robot_cell": "warehouse-a",
+      "frame_count": 240,
+      "created_at": "2026-05-30T00:05:00+00:00"
+    }
+  ],
+  "imports": [
+    {
+      "id": "imp_demo",
+      "source_uri": "s3://robot-lake/run-042",
+      "dataset_name": "warehouse-pick-v1",
+      "format": "lerobot",
+      "status": "succeeded",
+      "message": "已索引 12 条片段",
+      "created_at": "2026-05-30T00:00:00+00:00",
+      "updated_at": "2026-05-30T00:10:00+00:00"
+    }
+  ],
+  "annotation_tasks": [
+    {
+      "id": "ann_demo",
+      "dataset_id": "ds_demo",
+      "episode_id": "episode-000042",
+      "task_type": "trajectory_segment",
+      "assignee": "operator-a",
+      "labels": [
+        { "start_frame": 0, "end_frame": 64, "skill_id": "approach" },
+        { "start_frame": 65, "end_frame": 140, "skill_id": "grasp" }
+      ],
+      "status": "review",
+      "label_count": 2,
+      "updated_at": "2026-05-30T00:11:00+00:00"
+    }
+  ],
+  "training_jobs": [
+    {
+      "id": "train_demo",
+      "name": "rt-policy-smoke",
+      "dataset_id": "ds_demo",
+      "base_model": "rt-2-x",
+      "optimizer": "lora",
+      "status": "running",
+      "message": "第 3 轮训练中",
+      "created_at": "2026-05-30T00:12:00+00:00",
+      "updated_at": "2026-05-30T00:20:00+00:00"
+    }
+  ],
+  "models": [
+    {
+      "id": "demo-model",
+      "name": "mobile-policy",
+      "version": "1.1.0",
+      "artifact_uri": "models://mobile-policy/1.1.0",
+      "metrics": { "success": 0.82 },
+      "active": true,
+      "created_at": "2026-05-30T00:25:00+00:00"
+    }
+  ],
+  "simulation_jobs": [
+    {
+      "id": "sim_demo",
+      "scenario": "bin-pick-distractors",
+      "model_id": "demo-model",
+      "simulator": "isaac",
+      "sim2real_metric": "grasp transfer gap",
+      "status": "succeeded",
+      "message": "迁移差距 0.09",
+      "created_at": "2026-05-30T00:30:00+00:00",
+      "updated_at": "2026-05-30T00:35:00+00:00"
+    }
+  ],
+  "deployments": [
+    {
+      "id": "dep_demo",
+      "model_id": "demo-model",
+      "target": "jetson-orin",
+      "environment": "warehouse-a",
+      "status": "running",
+      "created_at": "2026-05-30T00:40:00+00:00",
+      "updated_at": "2026-05-30T00:45:00+00:00"
+    }
+  ],
+  "learning_queue": [
+    {
+      "id": "learn_demo",
+      "episode_id": "episode-000042",
+      "reason": "滑移恢复失败",
+      "priority": "high",
+      "status": "queued",
+      "created_at": "2026-05-30T00:50:00+00:00",
+      "updated_at": "2026-05-30T00:50:00+00:00"
+    }
+  ],
+  "audit_events": [
+    {
+      "id": "audit_demo",
+      "action": "model.activate",
+      "resource": "demo-model",
+      "detail": "1.1.0",
+      "actor": "static-pwa",
+      "role": "admin",
+      "created_at": "2026-05-30T00:55:00+00:00"
+    }
+  ],
+  "system_settings": {
+    "retention_days": 30,
+    "offline_mode": true,
+    "active_robot_fleet": "warehouse-fleet-a",
+    "approval_required_for_edge": true
+  },
+  "monitoring": {
+    "dataset_count": 1,
+    "episode_count": 12,
+    "queued_jobs": 1,
+    "running_jobs": 2,
+    "active_model_id": "demo-model",
+    "active_deployments": 1,
+    "open_learning_items": 1,
+    "recent_audit_events": 1,
+    "sim_success_rate": 1
+  }
+}

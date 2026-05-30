@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Runtime state (the JSON store + lock are generated at runtime)
+backend/data/
+*.lock
+state.json
+
+# Node / OS
+node_modules/
+.DS_Store
