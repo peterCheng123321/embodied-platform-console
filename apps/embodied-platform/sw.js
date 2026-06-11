@@ -1,8 +1,8 @@
-const CACHE = 'embodied-platform-v13';
+const CACHE = 'embodied-platform-v14';
 const ASSETS = [
   './index.html',
-  './assets/embodied-platform.css?v=12',
-  './assets/embodied-platform.js?v=12',
+  './assets/embodied-platform.css?v=13',
+  './assets/embodied-platform.js?v=13',
   './assets/manifest.webmanifest',
   './assets/icon.svg',
   './fixtures/demo-state.json',
@@ -26,5 +26,19 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  const req = event.request;
+  // NEVER intercept media (video/audio) or byte-range requests. Routing a media
+  // element's range request through the SW (event.respondWith(fetch(...))) breaks
+  // <video> streaming/seeking in Chrome — the media stack stalls at readyState 0.
+  // Returning without respondWith lets the browser's native range machinery handle
+  // it directly against the network.
+  if (
+    req.destination === 'video'
+    || req.destination === 'audio'
+    || req.headers.has('range')
+    || /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(req.url)
+  ) {
+    return;
+  }
+  event.respondWith(fetch(req).catch(() => caches.match(req)));
 });
