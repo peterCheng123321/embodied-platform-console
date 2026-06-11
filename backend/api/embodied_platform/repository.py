@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import fcntl
 import json
+import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -12,6 +13,9 @@ from typing import Any, Iterator, TypeVar
 from uuid import uuid4
 
 from .schema import SystemSettings
+
+
+logger = logging.getLogger(__name__)
 
 
 COLLECTIONS = [
@@ -37,10 +41,9 @@ T = TypeVar("T")
 
 
 def _lock_for(path: Path) -> RLock:
-    resolved = path.resolve()
-    if resolved not in _LOCKS:
-        _LOCKS[resolved] = RLock()
-    return _LOCKS[resolved]
+    # setdefault is atomic under the GIL: two threads racing on a first-seen path
+    # can never observe two distinct RLock instances for the same key.
+    return _LOCKS.setdefault(path.resolve(), RLock())
 
 
 def data_root() -> Path:
@@ -87,9 +90,22 @@ class JsonRepository:
 
     @contextmanager
     def _file_lock(self, *, shared: bool) -> Iterator[None]:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         lock_path = self.path.with_name(f"{self.path.name}.lock")
-        with lock_path.open("a") as lock_file:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            lock_file = lock_path.open("a")
+        except OSError as exc:
+            # On a read-only/unwritable data root the lock file cannot be
+            # created. Writes (exclusive) must still fail loudly, but shared
+            # reads degrade to a best-effort unlocked read so unauthenticated
+            # GETs don't 500 on an ops misconfig. The in-process RLock still
+            # serializes readers, and no writer can exist on a read-only root.
+            if not shared:
+                raise
+            logger.warning("embodied platform lock unavailable, reading without lock: %s", exc)
+            yield
+            return
+        with lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
             try:
                 yield
@@ -99,13 +115,28 @@ class JsonRepository:
     def _read_unlocked(self) -> dict[str, Any]:
         if not self.path.exists():
             return empty_state()
-        with self.path.open() as f:
-            state = json.load(f)
+        try:
+            with self.path.open() as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            logger.warning("embodied platform state file unreadable, using empty state: %s", exc)
+            return empty_state()
+        if not isinstance(state, dict):
+            logger.warning(
+                "embodied platform state file is not a JSON object (got %s), using empty state",
+                type(state).__name__,
+            )
+            return empty_state()
         base = empty_state()
-        base.update(state)
+        # Only carry over recognized keys; coerce any present-but-non-list
+        # collection to [] so a corrupt shape (e.g. {"datasets": 5}) cannot make
+        # every read endpoint 500 while iterating.
         for name in COLLECTIONS:
-            base.setdefault(name, [])
-        base.setdefault("system_settings", SystemSettings().model_dump(mode="json"))
+            value = state.get(name)
+            base[name] = value if isinstance(value, list) else []
+        settings = state.get("system_settings")
+        if isinstance(settings, dict):
+            base["system_settings"] = settings
         return base
 
     def _write_unlocked(self, state: dict[str, Any]) -> None:
@@ -113,7 +144,9 @@ class JsonRepository:
         tmp = self.path.with_name(f"{self.path.name}.{uuid4().hex}.tmp")
         try:
             with tmp.open("w") as f:
-                json.dump(state, f, indent=2, sort_keys=True)
+                # allow_nan=False so the on-disk state file is always RFC-8259
+                # JSON (no bare NaN/Infinity tokens that other parsers reject).
+                json.dump(state, f, indent=2, sort_keys=True, allow_nan=False)
                 f.write("\n")
                 f.flush()
                 os.fsync(f.fileno())

@@ -263,7 +263,23 @@ class ModelVersionCreate(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     version: str = Field(min_length=1, max_length=80)
     artifact_uri: str = Field(min_length=1, max_length=500)
-    metrics: dict[str, float] = Field(default_factory=dict)
+    # allow_inf_nan=False on the value type rejects NaN/Infinity (-> 422) so no
+    # metric is silently coerced to null or persisted as non-spec JSON.
+    metrics: dict[str, Annotated[float, Field(allow_inf_nan=False)]] = Field(default_factory=dict)
+
+    @field_validator("metrics")
+    @classmethod
+    def _cap_metric_keys(cls, value: dict[str, float]) -> dict[str, float]:
+        # Bound key count so one write cannot balloon the shared state.json.
+        if len(value) > 100:
+            raise ValueError("metrics may not exceed 100 keys")
+        # Bound key length too: the count cap alone leaves keys unbounded, so a
+        # single write could persist ~100 MB of key bytes. With float values
+        # (already length-bounded) this caps the metrics payload to a few KB.
+        for key in value:
+            if len(key) > 128:
+                raise ValueError("metric key may not exceed 128 characters")
+        return value
 
 
 class ModelVersion(ModelVersionCreate):
