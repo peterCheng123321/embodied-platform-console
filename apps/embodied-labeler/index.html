@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Empty by default: hosted labeler API calls use the current origin. -->
+    <meta name="api-base" content="">
+    <title>嵌入式 AI 标注 · 星聚</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0d4f4a',
+                        secondary: '#1f7a6b',
+                        dark: '#16201f',
+                        light: '#fcfcfd',
+                        accent: '#ff5a36',
+                    },
+                    fontFamily: {
+                        sans: ['"IBM Plex Sans SC"', 'sans-serif'],
+                        mono: ['"IBM Plex Mono"', 'monospace'],
+                    },
+                },
+            },
+        };
+    </script>
+    <link rel="stylesheet" href="assets/embodied/embodied.css?v=29">
+    <link rel="stylesheet" href="assets/console/console.css?v=2">
+</head>
+<body class="embodied-page console font-sans antialiased">
+    <div class="console-chassis">
+        <aside class="console-tree" aria-label="数据层级">
+            <div class="console-rail-section">
+                <div class="console-rail-title">XINGJU<span style="color:var(--ds-accent)">_</span>LABEL</div>
+                <input id="episode-tree-filter" class="console-tree-filter" type="text"
+                       placeholder="筛选回合…" aria-label="筛选回合">
+            </div>
+            <nav id="episode-tree" class="console-rail-section" aria-label="数据集与回合">
+                <!-- populated by assets/console/embodied-console.js -->
+            </nav>
+        </aside>
+
+        <section class="console-viewport">
+            <!-- task context bar — populated by loadEpisodeMeta() in embodied.js -->
+            <div class="console-task-bar">
+                <span id="task-text"></span>
+                <span id="task-text-zh"></span>
+            </div>
+            <section id="video-section" class="embodied-video-card">
+                <div id="video-frame" class="relative flex justify-center embodied-video-frame" data-player-state="loading">
+                    <video id="video" preload="auto"
+                           class="video-crisp rounded bg-black object-contain cursor-pointer"
+                           style="height: min(54vh, 460px); width: auto; max-width: 100%; aspect-ratio: 16/9;"
+                           data-video-src="assets/embodied/demo_episode.mp4"
+                           aria-label="嵌入式 AI 标注演示视频"
+                           playsinline>
+                        <source src="assets/embodied/demo_episode.mp4" type="video/mp4">
+                    </video>
+                    <div id="video-loading" class="embodied-video-state embodied-video-loading">
+                        <span class="embodied-video-spinner" aria-hidden="true"></span>
+                        <span>正在载入视频</span>
+                    </div>
+                    <div id="video-error" class="embodied-video-state embodied-video-error hidden" role="alert">
+                        <div>
+                            <strong><i class="fa fa-exclamation-triangle mr-2"></i>视频加载失败</strong>
+                            <p id="video-error-message">无法读取当前视频源，请检查本地素材或重新加载。</p>
+                            <button id="video-retry" type="button">
+                                <i class="fa fa-refresh"></i>
+                                重新加载视频
+                            </button>
+                        </div>
+                    </div>
+                    <div class="embodied-video-meta" aria-live="polite">
+                        <span>视频源</span>
+                        <strong id="video-source-status">demo_episode.mp4</strong>
+                    </div>
+                </div>
+                <div class="embodied-controls">
+                    <div class="embodied-primary-controls">
+                        <!-- Primary play / pause -->
+                        <button id="btn-play"
+                                class="w-11 h-11 rounded-full bg-accent hover:bg-accent/90 active:bg-accent/80 text-white flex items-center justify-center transition shadow-lg shadow-accent/20"
+                                title="Space  ·  播放 / 暂停">
+                            <i class="fa fa-play text-base pl-0.5"></i>
+                        </button>
+
+                        <!-- Time readout: current / total, current is light, total is muted -->
+                        <div class="embodied-time-readout">
+                            <span id="time-current" class="text-light text-base">00:00.000</span>
+                            <span class="text-zinc-700 text-base">/</span>
+                            <span id="time-total" class="text-zinc-500 text-sm">--:--.---</span>
+                        </div>
+
+                        <div class="embodied-marker-actions">
+                            <!-- Mark Start / Mark End: primary inline action, pushed right -->
+                            <button id="btn-mark-start"
+                                    class="ml-auto px-4 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 ring-1 ring-zinc-700 text-sm font-medium flex items-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 transition"
+                                    title="S  ·  open segment at playhead">
+                                <i class="fa fa-circle text-accent"></i>
+                                <span>标记起点 Mark start</span>
+                                <kbd class="ml-1 px-1.5 py-0.5 bg-zinc-900 ring-1 ring-zinc-700 rounded text-xs text-zinc-400">S</kbd>
+                            </button>
+                            <button id="btn-mark-end"
+                                    class="hidden ml-auto px-4 py-2.5 rounded-md bg-accent hover:bg-accent/90 ring-1 ring-accent text-sm font-medium text-white flex items-center gap-2 shadow-lg shadow-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-light focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 transition"
+                                    title="S  ·  close segment at playhead">
+                                <i class="fa fa-stop"></i>
+                                <span>标记终点 Mark end</span>
+                                <kbd class="ml-1 px-1.5 py-0.5 bg-white/15 ring-1 ring-white/20 rounded text-xs text-white">S</kbd>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="embodied-secondary-controls">
+                        <!-- Grouped frame-step buttons (–10 / –1 │ +1 / +10) -->
+                        <div class="embodied-frame-stepper">
+                            <button id="btn-back-10" class="px-3 py-2.5 text-zinc-300 hover:bg-zinc-700 hover:text-light font-mono text-xs tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset" title="Shift+,  ·  back 10 frames">
+                                <i class="fa fa-angle-double-left mr-1 text-zinc-500"></i>10
+                            </button>
+                            <button id="btn-back-1" class="px-3 py-2.5 text-zinc-300 hover:bg-zinc-700 hover:text-light font-mono text-xs tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset" title=",  ·  back 1 frame">
+                                <i class="fa fa-angle-left mr-1 text-zinc-500"></i>1
+                            </button>
+                            <button id="btn-fwd-1" class="px-3 py-2.5 text-zinc-300 hover:bg-zinc-700 hover:text-light font-mono text-xs tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset" title=".  ·  forward 1 frame">
+                                1<i class="fa fa-angle-right ml-1 text-zinc-500"></i>
+                            </button>
+                            <button id="btn-fwd-10" class="px-3 py-2.5 text-zinc-300 hover:bg-zinc-700 hover:text-light font-mono text-xs tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset" title="Shift+.  ·  forward 10 frames">
+                                10<i class="fa fa-angle-double-right ml-1 text-zinc-500"></i>
+                            </button>
+                        </div>
+
+                        <!-- Frame counter chip -->
+                        <div class="embodied-frame-chip">
+                            <span class="text-zinc-500 uppercase tracking-wider mr-1.5">frame</span>
+                            <span id="frame-current" class="text-light">0</span>
+                            <span class="text-zinc-700 mx-1">/</span>
+                            <span id="frame-total" class="text-zinc-500">?</span>
+                        </div>
+
+                        <!-- Playback speed -->
+                        <select id="playback-rate"
+                                class="skill-select bg-zinc-800/70 ring-1 ring-zinc-700 text-zinc-300 text-xs font-mono px-2 py-2 rounded-md
+                                       hover:bg-zinc-700 cursor-pointer transition border-none appearance-none
+                                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                title="Playback speed (also driven by J/L multi-tap)">
+                            <option value="0.1">0.1×</option>
+                            <option value="0.25">0.25×</option>
+                            <option value="0.5">0.5×</option>
+                            <option value="1" selected>1×</option>
+                            <option value="1.5">1.5×</option>
+                            <option value="2">2×</option>
+                        </select>
+
+                        <!-- Loop selected segment toggle -->
+                        <button id="btn-loop"
+                                class="px-3 py-2 rounded-md bg-zinc-800/70 ring-1 ring-zinc-700 text-zinc-400 hover:text-light hover:bg-zinc-700 transition text-xs font-mono flex items-center gap-1.5
+                                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                title="L  ·  Loop selected segment">
+                            <i class="fa fa-repeat"></i>
+                            <span class="hidden sm:inline">Loop</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- In-progress segment status banner — slim, animated-in only when active -->
+                <div id="segment-status" class="hidden mt-3 flex items-center gap-2 px-3 py-2 rounded-md bg-accent/10 ring-1 ring-accent/30 text-xs text-zinc-200 font-mono"></div>
+
+                <!-- Scrub bar with hover-preview thumbnail -->
+                <div class="mt-4 relative">
+                    <div id="scrub-bar" class="h-2 bg-zinc-800 rounded-full relative cursor-pointer group">
+                        <!-- baseline width:100% + scaleX(pct) avoids per-frame layout on timeupdate (was thrashing at 60Hz) -->
+                        <div id="scrub-fill" class="absolute inset-y-0 left-0 bg-accent rounded-full shadow-[0_0_8px_rgba(255,90,54,0.4)]"></div>
+                        <div id="scrub-head" class="absolute top-1/2 w-4 h-4 bg-light rounded-full ring-2 ring-accent shadow-lg"></div>
+                    </div>
+                    <!-- Floating frame preview that follows the cursor over the scrub bar -->
+                    <div id="scrub-preview"
+                         class="hidden absolute pointer-events-none rounded-md ring-1 ring-zinc-700 bg-zinc-950 overflow-hidden shadow-2xl"
+                         style="width: 128px; height: 72px; bottom: 100%; margin-bottom: 12px; background-image: url('assets/embodied/sprite.png'); background-repeat: no-repeat; transform: translateX(-50%);">
+                        <div id="scrub-preview-time"
+                             class="absolute bottom-0 inset-x-0 px-1 py-0.5 bg-black/70 text-light text-[10px] font-mono text-center tabular-nums">
+                            0.00s
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </section>
+
+        <aside class="console-inspector" aria-label="检查器">
+            <div class="console-rail-section">
+                <section id="palette-section" class="embodied-card embodied-palette-card">
+                    <div class="embodied-panel-heading embodied-palette-heading">
+                        <div>
+                            <span>技能标签</span>
+                            <small id="label-schema-description">按任务选择可用动作标签</small>
+                        </div>
+                        <label class="embodied-schema-field">
+                            <span>标签集</span>
+                            <select id="label-schema-select" aria-label="选择标签集"></select>
+                        </label>
+                    </div>
+                    <div id="palette" class="flex items-center gap-2 flex-wrap" role="group" aria-label="技能标签">
+                        <!-- pills inserted by JS -->
+                    </div>
+                </section>
+            </div>
+            <div class="console-rail-section">
+                <section id="segments-section" class="embodied-card embodied-segments-card">
+                    <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                        <h2 class="text-sm font-medium text-zinc-400 flex-shrink-0">已标注片段 <span id="seg-count" class="font-mono text-zinc-500">(0)</span></h2>
+                        <div id="iou-summary" class="hidden flex items-center gap-2 font-mono text-xs">
+                            <!-- Filled by renderIouSummary() -->
+                        </div>
+                        <span id="dirty-badge" class="hidden ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 ring-1 ring-amber-500/40 text-amber-300 text-xs font-mono">
+                            <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                            未保存的更改 Unsaved
+                        </span>
+                    </div>
+                    <div class="embodied-workflow-panel" aria-label="标注工作流状态">
+                        <div class="embodied-workflow-metric">
+                            <span class="embodied-workflow-label">当前技能</span>
+                            <strong id="workflow-active-skill">接近 reach</strong>
+                        </div>
+                        <div class="embodied-workflow-metric">
+                            <span class="embodied-workflow-label">片段状态</span>
+                            <strong id="workflow-segment-state">等待起点</strong>
+                        </div>
+                        <div class="embodied-workflow-metric">
+                            <span class="embodied-workflow-label">保存状态</span>
+                            <strong id="workflow-save-state">已同步</strong>
+                        </div>
+                        <span id="storage-mode-badge" class="embodied-storage-badge" data-storage-mode="checking">
+                            检查后端同步
+                        </span>
+                    </div>
+                    <div id="segment-list" class="space-y-1">
+                        <div class="embodied-empty-segments empty-state">
+                            <div class="embodied-empty-summary">
+                                <div class="embodied-empty-icon" aria-hidden="true">
+                                    <i class="fa fa-pencil-square-o"></i>
+                                </div>
+                                <div>
+                                    <p class="embodied-empty-eyebrow">当前清单为空</p>
+                                    <h3>从第一个动作片段开始</h3>
+                                    <p>选好技能后，在视频里标记动作开始和结束，片段会自动出现在这里供复核。</p>
+                                </div>
+                            </div>
+                            <div class="embodied-empty-steps" aria-label="标注步骤">
+                                <span><strong>1</strong> 选技能</span>
+                                <span><strong>2</strong> 标起点</span>
+                                <span><strong>3</strong> 标终点并复核</span>
+                            </div>
+                            <div class="embodied-empty-buttons">
+                                <button type="button" class="embodied-empty-action" data-action="empty-mark-start">
+                                    <i class="fa fa-circle"></i>
+                                    从当前帧开始标记
+                                </button>
+                                <button type="button" class="embodied-empty-secondary" data-action="empty-open-shortcuts">
+                                    <i class="fa fa-keyboard-o"></i>
+                                    查看快捷键
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="console-rail-section">
+                <div class="embodied-savebar">
+                    <span id="save-hint" class="text-xs text-zinc-500 font-mono hidden">
+                        <kbd class="px-1.5 py-0.5 bg-zinc-800 ring-1 ring-zinc-700 rounded text-zinc-400">⌘S</kbd>
+                        保存
+                    </span>
+                    <button id="save-btn"
+                            class="px-5 py-2.5 rounded-md bg-accent hover:bg-accent/90 text-white font-medium ring-1 ring-accent shadow-lg shadow-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-light focus-visible:ring-offset-2 focus-visible:ring-offset-dark transition">
+                        保存全部 Save all <i class="fa fa-arrow-right ml-1"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <div class="console-conductor">
+            <section id="timeline-section" class="embodied-card embodied-timeline-card">
+                <div class="embodied-panel-heading">
+                    <span>时间轴校对</span>
+                    <small>对齐参考片段、缩略图和夹爪信号</small>
+                </div>
+                <div class="timeline-review-shell">
+                    <div class="timeline-legend" aria-label="时间轴图例">
+                        <button type="button" data-timeline-focus="reference" aria-pressed="false"><i class="fa fa-star"></i> 参考片段</button>
+                        <button type="button" data-timeline-focus="user" aria-pressed="false"><i class="fa fa-pencil"></i> 你的标注</button>
+                        <button type="button" data-timeline-focus="thumbs" aria-pressed="false"><i class="fa fa-film"></i> 缩略图</button>
+                        <button type="button" data-timeline-focus="gripper" aria-pressed="false"><i class="fa fa-line-chart"></i> 夹爪信号</button>
+                    </div>
+                    <div class="timeline-track-stack">
+                        <div class="timeline-track-row" data-timeline-track="reference">
+                            <div class="timeline-track-label">
+                                <span>参考标注</span>
+                                <small>训练样例，不可编辑</small>
+                            </div>
+                            <div class="timeline-track-body timeline-reference-track">
+                                <svg id="gold-lane" class="w-full block" height="32" style="overflow:visible"
+                                     role="img" aria-label="本集参考动作片段"></svg>
+                            </div>
+                        </div>
+                        <div class="timeline-track-row" data-timeline-track="user">
+                            <div class="timeline-track-label">
+                                <span>你的标注</span>
+                                <small>S 标记，可拖拽边界</small>
+                            </div>
+                            <div class="timeline-track-body timeline-user-track">
+                                <svg id="timeline-lanes" class="w-full block" height="64" style="overflow:visible"
+                                     role="region" aria-label="你的动作片段时间轴。使用 Q 和 E 跳转片段，使用方括号微调边界。"></svg>
+                                <div id="timeline-playhead" class="absolute top-0 bottom-0 w-px bg-light pointer-events-none"></div>
+                            </div>
+                        </div>
+                        <div class="timeline-track-row" data-timeline-track="thumbs">
+                            <div class="timeline-track-label">
+                                <span>视频缩略图</span>
+                                <small>快速定位动作变化</small>
+                            </div>
+                            <div class="timeline-track-body">
+                                <div id="thumb-strip" class="w-full h-9 bg-zinc-800 rounded overflow-hidden"
+                                     style="background-image: url('assets/embodied/sprite.png');
+                                            background-repeat: no-repeat;
+                                            background-size: 100% 100%;"></div>
+                            </div>
+                        </div>
+                        <div class="timeline-track-row" data-timeline-track="gripper">
+                            <div class="timeline-track-label">
+                                <span>夹爪信号</span>
+                                <small>辅助判断抓取/放置</small>
+                            </div>
+                            <div class="timeline-track-body timeline-gripper-track">
+                                <svg id="gripper-plot" class="w-full block" height="36" style="overflow:visible"></svg>
+                                <div id="gripper-error" class="hidden absolute inset-0 flex items-center justify-center text-zinc-600 text-xs">
+                                    未读取到夹爪信号
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <footer class="console-bottombar">
+            <nav class="console-modes" aria-label="模式">
+                <a class="console-mode" href="/app/#data-management"><i class="fa fa-th-large" aria-hidden="true"></i> 工作台</a>
+                <span class="console-mode" aria-current="page"><i class="fa fa-pencil" aria-hidden="true"></i> 标注</span>
+                <a class="console-mode" href="/app/#annotation"><i class="fa fa-check-square-o" aria-hidden="true"></i> 质检</a>
+                <a class="console-mode" href="/app/#monitoring"><i class="fa fa-bar-chart" aria-hidden="true"></i> 统计</a>
+                <a class="console-mode" href="/app/#collection"><i class="fa fa-exchange" aria-hidden="true"></i> 采集</a>
+            </nav>
+            <div class="console-status">
+                <span id="dataset-label" class="console-mono-10">lerobot/droid_100 · ep 0 · ext_left</span>
+                <span>⌘K 命令</span>
+                <button id="help-btn" class="console-mode" title="键盘快捷键 (?)" aria-label="打开键盘快捷键"><kbd>?</kbd></button>
+            </div>
+        </footer>
+    </div>
+
+    <div id="toast-container" class="fixed top-4 right-4 space-y-2 z-50"></div>
+
+    <div id="help-overlay" class="hidden fixed inset-0 bg-black/35 z-40 flex items-center justify-center">
+        <div class="embodied-shortcut-panel">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-medium">键盘快捷键</h2>
+                <button id="help-close" class="embodied-icon-button"><i class="fa fa-times"></i></button>
+            </div>
+            <table class="w-full text-sm">
+                <tbody>
+                    <tr><td colspan="2" class="pt-2 pb-1 text-[10px] uppercase tracking-wider text-zinc-600">JKL Shuttle</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">J K L</kbd></td><td class="text-zinc-400 pl-3">反向 / 暂停 / 正向 (multi-tap = 2× / 4× / 8×)</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">Space</kbd></td><td class="text-zinc-400 pl-3">播放 / 暂停</td></tr>
+                    <tr><td colspan="2" class="pt-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-600">Mark</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">S</kbd></td><td class="text-zinc-400 pl-3">开始 / 结束片段 (toggle)</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">I O</kbd></td><td class="text-zinc-400 pl-3">Mark in / Mark out (additive to S)</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">, .</kbd></td><td class="text-zinc-400 pl-3">±1 帧</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">⇧, ⇧.</kbd></td><td class="text-zinc-400 pl-3">±10 帧</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">1–9</kbd></td><td class="text-zinc-400 pl-3">激活技能标签</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">⇧ 1–9</kbd></td><td class="text-zinc-400 pl-3">更改选中片段的技能 (Change skill of selected segment)</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">Q E</kbd></td><td class="text-zinc-400 pl-3">跳转到上 / 下一个片段</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">[ ]</kbd></td><td class="text-zinc-400 pl-3">微调选中片段的边界 ±1 帧</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">⌫</kbd></td><td class="text-zinc-400 pl-3">删除选中片段</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">Z</kbd></td><td class="text-zinc-400 pl-3">撤销上一步 Undo</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">⇧ Z</kbd></td><td class="text-zinc-400 pl-3">重做 Redo</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">\</kbd></td><td class="text-zinc-400 pl-3">循环播放选中片段 (Loop selected segment)</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">?</kbd></td><td class="text-zinc-400 pl-3">显示此面板</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">⌘S</kbd></td><td class="text-zinc-400 pl-3">保存全部</td></tr>
+                </tbody>
+            </table>
+            <div class="border-t border-zinc-800 mt-5 pt-4 flex items-center justify-between">
+                <span class="text-xs text-zinc-500">演示工具 Demo tools</span>
+                <button id="reset-demo" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 ring-1 ring-zinc-700 text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                    <i class="fa fa-refresh mr-1.5"></i> 重置演示 Reset
+                </button>
+            </div>
+        </div>
+    </div>
+    <script src="assets/embodied/embodied.js?v=26" type="module"></script>
+    <script src="assets/console/embodied-console.js?v=1" type="module"></script>
+</body>
+</html>

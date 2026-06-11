@@ -19,12 +19,17 @@ COLLECTIONS = [
     "episodes",
     "imports",
     "annotation_tasks",
+    "collection_profiles",
+    "collection_runs",
+    "collection_attempts",
     "training_jobs",
     "models",
     "simulation_jobs",
     "deployments",
     "learning_queue",
     "audit_events",
+    "label_events",
+    "telemetry_events",
 ]
 
 _LOCKS: dict[Path, RLock] = {}

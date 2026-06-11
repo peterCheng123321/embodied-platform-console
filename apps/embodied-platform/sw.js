@@ -1,8 +1,8 @@
-const CACHE = 'embodied-platform-v11';
+const CACHE = 'embodied-platform-v13';
 const ASSETS = [
   './index.html',
-  './assets/embodied-platform.css?v=11',
-  './assets/embodied-platform.js?v=11',
+  './assets/embodied-platform.css?v=12',
+  './assets/embodied-platform.js?v=12',
   './assets/manifest.webmanifest',
   './assets/icon.svg',
   './fixtures/demo-state.json',

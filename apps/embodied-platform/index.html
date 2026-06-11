@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+SC:wght@300;400;500;600;700&display=swap">
-  <link rel="stylesheet" href="assets/embodied-platform.css?v=11">
+  <link rel="stylesheet" href="assets/embodied-platform.css?v=12">
 </head>
 <body>
   <header class="platform-header">
@@ -67,6 +67,7 @@
   <main class="platform-workspace">
     <nav class="module-rail" aria-label="具身平台模块">
       <button type="button" data-module="data-management" class="active"><span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.66 3.13 3 7 3s7-1.34 7-3V6"></path><path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3"></path></svg></span>数据</button>
+      <button type="button" data-module="collection"><span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="m9 8 1.6 1.6L15 5.5"></path><path d="M8 14h8"></path><path d="M8 18h5"></path></svg></span>采集</button>
       <button type="button" data-module="annotation"><span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4 5 5L9 20H4v-5L15 4Z"></path><path d="m13 6 5 5"></path></svg></span>标注</button>
       <button type="button" data-module="training"><span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"></path></svg></span>训练</button>
       <button type="button" data-module="models"><span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"></path><path d="m4 7.5 8 4.5 8-4.5M12 12v9"></path></svg></span>模型</button>
@@ -127,13 +128,54 @@
       <div id="episodes-list" class="data-table"></div>
     </section>
 
+    <section id="collection-panel" class="module-panel" data-module="collection">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">第一人称采集流程</p>
+          <h2>试采任务进度与复核</h2>
+        </div>
+        <button type="button" data-action="create-collection-run" class="btn-primary">创建试采批次</button>
+      </div>
+      <div class="form-grid">
+        <label>流程<select id="collection-profile"><option value="first_person_trial_v1">第一人称试采流程</option></select></label>
+        <label>采集对象<input id="collection-subject" value="operator-a"></label>
+        <label>负责人<input id="collection-assignee" value="operator-a"></label>
+        <label>批次 ID<input id="collection-run-id" value="crun_demo_first_person"></label>
+      </div>
+      <div id="collection-summary" class="collection-summary" aria-label="采集概览"></div>
+      <div class="form-grid">
+        <label>任务<select id="collection-task"><option value="task_01">task_01 · 笔帽拔下后插到笔杆尾端</option></select></label>
+        <label>录制次数<input id="collection-attempt-index" type="number" min="1" max="8" step="1" value="2"></label>
+        <label>状态<select id="collection-attempt-status"><option value="uploaded">已上传</option><option value="recorded">已录制</option><option value="deleted">已删除</option></select></label>
+        <label class="wide-field">视频 URI<input id="collection-video-uri" value="file:///demo/first-person/task-01-attempt-02.mp4"></label>
+        <label class="wide-field">口述文本<input id="collection-transcript" value="操作开始。操作结束，任务成功。"></label>
+      </div>
+      <div class="action-row">
+        <button type="button" data-action="register-collection-attempt" class="btn-primary">登记视频</button>
+      </div>
+      <div class="form-grid">
+        <label>复核视频 ID<input id="collection-review-attempt" value="cat_demo_task_01_001"></label>
+        <label>结论<select id="collection-review-decision"><option value="accept">通过</option><option value="reject">拒绝</option><option value="needs_rework">返工</option></select></label>
+        <label class="wide-field">问题代码<input id="collection-review-issues" value="" placeholder="missing_required_speech, gripper_out_of_frame"></label>
+        <label class="wide-field">复核备注<input id="collection-review-notes" value=""></label>
+      </div>
+      <div class="action-row">
+        <button type="button" data-action="review-collection-attempt" class="btn-primary">保存复核</button>
+      </div>
+      <div id="collection-task-matrix" class="data-table"></div>
+      <div id="collection-attempt-list" class="data-table"></div>
+    </section>
+
     <section id="annotation-panel" class="module-panel" data-module="annotation">
       <div class="panel-head">
         <div>
           <p class="eyebrow">智能标注平台</p>
           <h2>片段任务保存与复核队列</h2>
         </div>
-        <button type="button" data-action="save-annotation" class="btn-primary">保存标注</button>
+        <div class="action-row">
+          <a id="open-temporal-labeler" href="/labeler/?dataset=demo&amp;episode=0" class="btn-secondary">打开完整时间段标注器</a>
+          <button type="button" data-action="save-annotation" class="btn-primary">保存标注</button>
+        </div>
       </div>
       <div class="form-grid">
         <label>数据集 ID<input id="annotation-dataset" value="warehouse-pick-v1"></label>
@@ -272,6 +314,6 @@
     </section>
   </main>
 
-  <script src="assets/embodied-platform.js?v=11"></script>
+  <script src="assets/embodied-platform.js?v=12"></script>
 </body>
 </html>

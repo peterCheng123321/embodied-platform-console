@@ -49,6 +49,36 @@
       "updated_at": "2026-05-30T00:11:00+00:00"
     }
   ],
+  "collection_profiles": [],
+  "collection_runs": [
+    {
+      "id": "crun_demo_first_person",
+      "profile_id": "first_person_trial_v1",
+      "subject_id": "operator-a",
+      "assignee": "operator-a",
+      "status": "collecting",
+      "created_at": "2026-06-08T00:00:00+00:00",
+      "updated_at": "2026-06-08T00:00:00+00:00"
+    }
+  ],
+  "collection_attempts": [
+    {
+      "id": "cat_demo_task_01_001",
+      "run_id": "crun_demo_first_person",
+      "profile_id": "first_person_trial_v1",
+      "task_id": "task_01",
+      "attempt_index": 1,
+      "video_uri": "file:///demo/first-person/task-01-attempt-01.mp4",
+      "duration_seconds": 12.5,
+      "frame_count": 375,
+      "status": "uploaded",
+      "deleted": false,
+      "recorded_at": "2026-06-08T00:00:00+00:00",
+      "transcript": "操作开始。操作结束，任务成功。",
+      "review": null,
+      "segment_annotation_ref": null
+    }
+  ],
   "training_jobs": [
     {
       "id": "train_demo",

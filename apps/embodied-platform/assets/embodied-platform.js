@@ -3,6 +3,9 @@ const API = {
   episodes: '/api/embodied-platform/episodes',
   imports: '/api/embodied-platform/imports',
   annotation: '/api/embodied-platform/annotation-tasks',
+  collectionProfiles: '/api/embodied-platform/collection-profiles',
+  collectionRuns: '/api/embodied-platform/collection-runs',
+  collectionAttempts: '/api/embodied-platform/collection-attempts',
   training: '/api/embodied-platform/training-jobs',
   models: '/api/embodied-platform/models',
   simulation: '/api/embodied-platform/simulation-jobs',
@@ -16,6 +19,7 @@ const API = {
 
 const MODULE_IDS = [
   'data-management',
+  'collection',
   'annotation',
   'training',
   'models',
@@ -47,6 +51,9 @@ const COLLECTIONS = [
   'episodes',
   'imports',
   'annotation_tasks',
+  'collection_profiles',
+  'collection_runs',
+  'collection_attempts',
   'training_jobs',
   'models',
   'simulation_jobs',
@@ -60,6 +67,9 @@ const LIVE_ENDPOINTS = [
   { target: 'episodes', label: '片段', url: API.episodes, fallback: [] },
   { target: 'imports', label: '导入任务', url: API.imports, fallback: [] },
   { target: 'annotation_tasks', label: '标注任务', url: API.annotation, fallback: [] },
+  { target: 'collection_profiles', label: '采集配置', url: API.collectionProfiles, fallback: [] },
+  { target: 'collection_runs', label: '采集进度', url: API.collectionRuns, fallback: [] },
+  { target: 'collection_attempts', label: '采集视频', url: API.collectionAttempts, fallback: [] },
   { target: 'training_jobs', label: '训练任务', url: API.training, fallback: [] },
   { target: 'models', label: '模型', url: API.models, fallback: [] },
   { target: 'simulation_jobs', label: '仿真任务', url: API.simulation, fallback: [] },
@@ -77,6 +87,9 @@ const ACTION_ROLES = {
   'create-episode': ['admin', 'data_manager', 'operator'],
   'start-import': ['admin', 'data_manager', 'operator'],
   'save-annotation': ['admin', 'annotator', 'reviewer', 'operator'],
+  'create-collection-run': ['admin', 'data_manager', 'annotator', 'reviewer', 'operator'],
+  'register-collection-attempt': ['admin', 'annotator', 'reviewer', 'operator'],
+  'review-collection-attempt': ['admin', 'reviewer', 'operator'],
   'start-training': ['admin', 'ml_engineer', 'operator'],
   'activate-model': ['admin', 'ml_engineer', 'operator'],
   'start-simulation': ['admin', 'ml_engineer', 'operator'],
@@ -96,6 +109,21 @@ const LABELS = {
   open: '待处理',
   accepted: '已通过',
   rework: '返工',
+  uploaded: '已上传',
+  draft: '草稿',
+  recorded: '已录制',
+  ready_for_review: '待复核',
+  rejected: '已拒绝',
+  deleted: '已删除',
+  blocked: '已阻塞',
+  collecting: '采集中',
+  passed: '已通过',
+  collect: '采集',
+  ordinary: '常规',
+  speak_while_doing: '边说边做',
+  accept: '通过',
+  reject: '拒绝',
+  needs_rework: '返工',
   active: '已激活',
   current: '当前',
   set: '已设置',
@@ -130,6 +158,67 @@ const LABELS = {
   offline_mode: '离线模式',
   active_robot_fleet: '机器人集群',
   approval_required_for_edge: '边缘审批',
+};
+
+const FIRST_PERSON_PROFILE_FALLBACK = {
+  id: 'first_person_trial_v1',
+  name: '第一人称试采流程',
+  version: 1,
+  source: 'Feishu workflow inspected 2026-06-08',
+  task_count_required: 8,
+  default_required_uploads: 6,
+  default_max_attempts: 8,
+  completion_policy: 'uploaded_count_per_task',
+  tasks: [
+    ['task_01', 'ordinary', '笔帽拔下后插到笔杆尾端'],
+    ['task_02', 'ordinary', '杯盖盖紧后杯子倒放'],
+    ['task_03', 'ordinary', '塑料袋撑开后放入空瓶并收拢袋口'],
+    ['task_04', 'ordinary', '多个物体按颜色排序'],
+    ['task_05', 'ordinary', '左右手按顺序抽纸巾擦桌子'],
+    ['task_06', 'ordinary', '拧瓶盖'],
+    ['task_07', 'speak_while_doing', '抽出碗底一次性筷子并拢摆齐'],
+    ['task_08', 'speak_while_doing', '毛巾卷成一卷后放进抽屉右侧'],
+  ].map(([task_id, mode, title]) => ({
+    task_id,
+    mode,
+    title,
+    required_uploads: 6,
+    max_attempts: 8,
+    environment: { clutter_min: task_id === 'task_04' ? 0 : 6, first_person_view: true },
+    target_objects: [],
+    speech: mode === 'ordinary' ? ['操作开始', '操作结束，任务成功'] : ['任务名称', '作业流程'],
+    procedure_steps: [],
+    duration_rules: [],
+    qc_checks: [
+      'speech.required_phrase',
+      'scene.clutter',
+      'scene.lighting',
+      'view.first_person',
+      'device.gripper_visibility',
+      'device.marker_visibility',
+      'audio.background_noise',
+    ],
+    task_notes: [],
+  })),
+  issue_codes: [
+    ['missing_required_speech', '必需口述缺失或不清晰', 'critical'],
+    ['speech_while_motion', '常规模式口述与动作重叠', 'warning'],
+    ['task_description_mismatch', '任务描述与结果不一致', 'critical'],
+    ['unclear_target_object', '目标物体指代不清', 'warning'],
+    ['scene_clutter_insufficient', '杂乱物数量或分布不足', 'warning'],
+    ['scene_clutter_invalid_plane', '杂乱物平面或堆叠不合规', 'warning'],
+    ['lighting_too_dark', '环境过暗', 'warning'],
+    ['other_people_or_devices_visible', '出现其他人员或采集设备', 'critical'],
+    ['gripper_out_of_frame', '夹爪出画或触碰画面边缘', 'critical'],
+    ['marker_or_block_missing', '定位块或固定码可见性不足', 'critical'],
+    ['motion_too_fast', '动作过快', 'warning'],
+    ['background_noise', '背景音干扰', 'warning'],
+    ['device_disconnect', '设备断连或重启', 'critical'],
+    ['abnormal_recovery_missing', '异常情况未按规则口述恢复', 'warning'],
+    ['task_specific_setup_failure', '任务特定准备不合规', 'warning'],
+    ['attempt_limit_exhausted', '录制次数已用尽', 'critical'],
+    ['upload_quota_incomplete', '上传数量不足', 'critical'],
+  ].map(([id, label, severity]) => ({ id, label, severity })),
 };
 
 class FieldValidationError extends Error {
@@ -629,14 +718,26 @@ const STATUS_TOKENS = {
   set: 'neutral',
   current: 'neutral',
   normal: 'neutral',
+  draft: 'neutral',
+  recorded: 'neutral',
+  collecting: 'info',
+  uploaded: 'info',
+  ready_for_review: 'warn',
   running: 'info',
   succeeded: 'ok',
   accepted: 'ok',
   active: 'ok',
+  passed: 'ok',
+  accept: 'ok',
   review: 'warn',
   rework: 'warn',
+  needs_rework: 'warn',
   high: 'warn',
   failed: 'danger',
+  rejected: 'danger',
+  reject: 'danger',
+  deleted: 'danger',
+  blocked: 'danger',
   cancelled: 'danger',
   urgent: 'danger',
   low: 'faint',
@@ -771,6 +872,160 @@ function monTile(token, label, valueHtml, unitHtml, barWidth) {
     + `</div>`;
 }
 
+function firstPersonProfile(profileId = '') {
+  const profiles = state.data?.collection_profiles || [];
+  const selectedId = profileId || document.getElementById('collection-profile')?.value || FIRST_PERSON_PROFILE_FALLBACK.id;
+  return profiles.find((profile) => profile.id === selectedId)
+    || profiles.find((profile) => profile.id === FIRST_PERSON_PROFILE_FALLBACK.id)
+    || FIRST_PERSON_PROFILE_FALLBACK;
+}
+
+function syncCollectionTaskOptions(profile) {
+  const select = document.getElementById('collection-task');
+  if (!select) return;
+  const current = select.value;
+  const optionHtml = profile.tasks.map((task) => (
+    `<option value="${escapeHtml(task.task_id)}">${escapeHtml(`${task.task_id} · ${task.title}`)}</option>`
+  )).join('');
+  if (select.dataset.profileId !== profile.id || select.options.length !== profile.tasks.length) {
+    select.innerHTML = optionHtml;
+    select.dataset.profileId = profile.id;
+  }
+  if (Array.from(select.options).some((option) => option.value === current)) {
+    select.value = current;
+  }
+}
+
+function collectionAttemptsForRun(runId) {
+  return (state.data?.collection_attempts || []).filter((attempt) => attempt.run_id === runId);
+}
+
+function collectionUploadedStatus(status) {
+  return ['uploaded', 'ready_for_review', 'accepted', 'rejected', 'rework'].includes(status);
+}
+
+function collectionProgressForRun(run) {
+  const profile = firstPersonProfile(run.profile_id);
+  const attempts = collectionAttemptsForRun(run.id);
+  const tasks = profile.tasks.map((task) => {
+    const taskAttempts = attempts.filter((attempt) => attempt.task_id === task.task_id);
+    const attemptCount = taskAttempts.length;
+    const uploadedCount = taskAttempts.filter((attempt) => collectionUploadedStatus(attempt.status)).length;
+    const acceptedCount = taskAttempts.filter((attempt) => attempt.status === 'accepted').length;
+    const remainingAttempts = Math.max(0, task.max_attempts - attemptCount);
+    let status = 'collecting';
+    if (acceptedCount >= task.required_uploads) {
+      status = 'passed';
+    } else if (uploadedCount >= task.required_uploads) {
+      status = 'ready_for_review';
+    } else if (remainingAttempts === 0) {
+      status = 'blocked';
+    }
+    return {
+      task_id: task.task_id,
+      title: task.title,
+      mode: task.mode,
+      status,
+      attempt_count: attemptCount,
+      uploaded_count: uploadedCount,
+      accepted_count: acceptedCount,
+      remaining_attempts: remainingAttempts,
+      required_uploads: task.required_uploads,
+      max_attempts: task.max_attempts,
+    };
+  });
+  const blockedTaskCount = tasks.filter((task) => task.status === 'blocked').length;
+  const readyTaskCount = tasks.filter((task) => ['ready_for_review', 'passed'].includes(task.status)).length;
+  const completedTaskCount = tasks.filter((task) => task.status === 'passed').length;
+  let status = 'collecting';
+  if (blockedTaskCount) {
+    status = 'blocked';
+  } else if (completedTaskCount === profile.task_count_required) {
+    status = 'passed';
+  } else if (readyTaskCount === profile.task_count_required) {
+    status = 'ready_for_review';
+  }
+  return {
+    run_id: run.id,
+    profile_id: profile.id,
+    status,
+    completed_task_count: completedTaskCount,
+    ready_task_count: readyTaskCount,
+    blocked_task_count: blockedTaskCount,
+    tasks,
+  };
+}
+
+function selectedCollectionRun(data) {
+  const runs = data.collection_runs || [];
+  const runId = document.getElementById('collection-run-id')?.value.trim();
+  if (runId) return runs.find((run) => run.id === runId) || null;
+  return runs.at(-1) || null;
+}
+
+function renderCollection(data) {
+  const summary = document.getElementById('collection-summary');
+  const matrix = document.getElementById('collection-task-matrix');
+  const attemptsNode = document.getElementById('collection-attempt-list');
+  if (!summary || !matrix || !attemptsNode) return;
+
+  const profile = firstPersonProfile(document.getElementById('collection-profile')?.value);
+  syncCollectionTaskOptions(profile);
+  const run = selectedCollectionRun(data);
+  const runInput = document.getElementById('collection-run-id');
+  if (run && runInput && !runInput.value.trim()) runInput.value = run.id;
+  const progress = run ? collectionProgressForRun(run) : null;
+  const attempts = run ? collectionAttemptsForRun(run.id) : [];
+  const latestAttempt = attempts.at(-1);
+  const reviewInput = document.getElementById('collection-review-attempt');
+  if (latestAttempt && reviewInput && !reviewInput.value.trim()) reviewInput.value = latestAttempt.id;
+
+  const summaryItems = [
+    { label: '批次', content: run?.id || '未创建' },
+    { label: '状态', content: progress ? tag(progress.status).value : tag('collecting').value, trusted: true },
+    { label: '已达标任务', content: `${progress?.ready_task_count ?? 0}/${profile.task_count_required}` },
+    { label: '已通过任务', content: `${progress?.completed_task_count ?? 0}/${profile.task_count_required}` },
+    { label: '阻塞任务', content: String(progress?.blocked_task_count ?? 0) },
+  ];
+  summary.innerHTML = summaryItems.map((item) => (
+    `<div><span>${escapeHtml(item.label)}</span><strong>${item.trusted ? item.content : escapeHtml(item.content)}</strong></div>`
+  )).join('');
+
+  const progressByTask = new Map((progress?.tasks || []).map((task) => [task.task_id, task]));
+  table('collection-task-matrix', ['任务', '模式', '上传', '尝试', '剩余', '状态'], profile.tasks.map((task) => {
+    const item = progressByTask.get(task.task_id) || {
+      uploaded_count: 0,
+      attempt_count: 0,
+      remaining_attempts: task.max_attempts,
+      required_uploads: task.required_uploads,
+      max_attempts: task.max_attempts,
+      status: 'collecting',
+    };
+    return [
+      `${task.task_id} · ${task.title}`,
+      LABELS[task.mode] || task.mode,
+      `${item.uploaded_count}/${item.required_uploads}`,
+      `${item.attempt_count}/${item.max_attempts}`,
+      String(item.remaining_attempts),
+      tag(item.status),
+    ];
+  }));
+
+  table('collection-attempt-list', ['视频 ID', '任务', '次数', '视频', '状态', '复核'], attempts.slice().reverse().map((attempt) => {
+    const review = attempt.review
+      ? `${LABELS[attempt.review.decision] || attempt.review.decision} · ${attempt.review.reviewer}`
+      : '未复核';
+    return [
+      attempt.id,
+      attempt.task_id,
+      String(attempt.attempt_index),
+      attempt.video_uri,
+      tag(attempt.status),
+      review,
+    ];
+  }));
+}
+
 function renderAll() {
   if (!state.data) return;
   const data = state.data;
@@ -793,6 +1048,7 @@ function renderAll() {
     item.robot_cell || '',
     String(item.frame_count ?? 0),
   ]));
+  renderCollection(data);
   table('annotation-list', ['片段', '任务', '负责人', '状态'], data.annotation_tasks.map((item) => [
     item.episode_id,
     LABELS[item.task_type] || item.task_type,
@@ -923,6 +1179,61 @@ function requireNewLearningIdentity(episodeId, reason, priority) {
   if (duplicate) throw new FieldValidationError('learning-episode', `学习队列已存在：${episodeId}`);
 }
 
+function requireCollectionRun(runId) {
+  const run = state.data.collection_runs.find((item) => item.id === runId);
+  if (!run) throw new FieldValidationError('collection-run-id', `未找到试采批次：${runId}`);
+  return run;
+}
+
+function requireCollectionTask(profile, taskId) {
+  const task = profile.tasks.find((item) => item.task_id === taskId);
+  if (!task) throw new FieldValidationError('collection-task', `未找到试采任务：${taskId}`);
+  return task;
+}
+
+function requireNewCollectionAttempt(runId, taskId, attemptIndex, maxAttempts) {
+  if (attemptIndex > maxAttempts) {
+    throw new FieldValidationError('collection-attempt-index', `录制次数不能超过 ${maxAttempts}`);
+  }
+  const duplicate = state.data.collection_attempts.find((attempt) => (
+    attempt.run_id === runId
+    && attempt.task_id === taskId
+    && attempt.attempt_index === attemptIndex
+  ));
+  if (duplicate) throw new FieldValidationError('collection-attempt-index', `该任务第 ${attemptIndex} 次录制已存在`);
+}
+
+function requireCollectionAttempt(attemptId) {
+  const attempt = state.data.collection_attempts.find((item) => item.id === attemptId);
+  if (!attempt) throw new FieldValidationError('collection-review-attempt', `未找到采集视频：${attemptId}`);
+  return attempt;
+}
+
+function parseCollectionIssueCodes() {
+  return value('collection-review-issues')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function requireKnownIssueCodes(profile, issueCodes) {
+  const allowed = new Set(profile.issue_codes.map((issue) => issue.id));
+  const bad = issueCodes.filter((code) => !allowed.has(code));
+  if (bad.length) throw new FieldValidationError('collection-review-issues', `未知问题代码：${bad.join(', ')}`);
+}
+
+function collectionStatusForReviewDecision(decision) {
+  if (decision === 'accept') return 'accepted';
+  if (decision === 'reject') return 'rejected';
+  return 'rework';
+}
+
+function syncCollectionRunStatus(run) {
+  const progress = collectionProgressForRun(run);
+  run.status = progress.status;
+  run.updated_at = new Date().toISOString();
+}
+
 function assertOfflineReference(liveWrite, check) {
   if (!liveWrite) check();
 }
@@ -1022,6 +1333,107 @@ async function runAction(action) {
         } else {
           const result = { id: `ann-${Date.now()}`, label_count: payload.labels.length, updated_at: new Date().toISOString(), ...payload };
           useLocalWithAudit('annotation_tasks', result, 'annotation.save', result.id, result.episode_id);
+        }
+        break;
+      }
+      case 'create-collection-run': {
+        const payload = {
+          profile_id: value('collection-profile'),
+          subject_id: textInput('collection-subject', '采集对象'),
+          assignee: textInput('collection-assignee', '负责人'),
+        };
+        if (liveWrite) {
+          const created = await apiWrite(API.collectionRuns, payload);
+          document.getElementById('collection-run-id').value = created.id;
+          await refreshState({ preserveLiveOnFailure: true });
+        } else {
+          const now = new Date().toISOString();
+          const result = {
+            id: `crun-${Date.now()}`,
+            status: 'collecting',
+            created_at: now,
+            updated_at: now,
+            ...payload,
+          };
+          document.getElementById('collection-run-id').value = result.id;
+          useLocalWithAudit('collection_runs', result, 'collection.run.create', result.id, result.subject_id);
+        }
+        break;
+      }
+      case 'register-collection-attempt': {
+        const runId = textInput('collection-run-id', '试采批次');
+        const taskId = value('collection-task');
+        const attemptIndex = numberInput('collection-attempt-index', '录制次数', 1, 50);
+        const payload = {
+          task_id: taskId,
+          attempt_index: attemptIndex,
+          video_uri: textInput('collection-video-uri', '视频 URI', 500),
+          status: value('collection-attempt-status'),
+        };
+        const transcript = document.getElementById('collection-transcript')?.value.trim();
+        if (transcript) payload.transcript = transcript;
+        assertOfflineReference(liveWrite, () => {
+          const run = requireCollectionRun(runId);
+          const task = requireCollectionTask(firstPersonProfile(run.profile_id), taskId);
+          requireNewCollectionAttempt(runId, taskId, attemptIndex, task.max_attempts);
+        });
+        if (liveWrite) {
+          const created = await apiWrite(`${API.collectionRuns}/${runId}/attempts`, payload);
+          document.getElementById('collection-review-attempt').value = created.id;
+          await refreshState({ preserveLiveOnFailure: true });
+        } else {
+          const run = requireCollectionRun(runId);
+          const now = new Date().toISOString();
+          const result = {
+            id: `cat-${Date.now()}`,
+            run_id: runId,
+            profile_id: run.profile_id,
+            deleted: payload.status === 'deleted',
+            recorded_at: now,
+            duration_seconds: null,
+            frame_count: null,
+            review: null,
+            segment_annotation_ref: null,
+            ...payload,
+          };
+          state.data.collection_attempts.push(result);
+          syncCollectionRunStatus(run);
+          document.getElementById('collection-review-attempt').value = result.id;
+          appendLocalAudit('collection.attempt.create', result.id, result.task_id);
+          persistDemoState();
+          renderAll();
+        }
+        break;
+      }
+      case 'review-collection-attempt': {
+        const attemptId = textInput('collection-review-attempt', '复核视频 ID');
+        const issueCodes = parseCollectionIssueCodes();
+        const payload = {
+          decision: value('collection-review-decision'),
+          check_results: issueCodes.map((code) => ({ check_id: `issue.${code}`, result: 'fail', note: '' })),
+          issue_codes: issueCodes,
+          notes: document.getElementById('collection-review-notes')?.value.trim() || '',
+        };
+        assertOfflineReference(liveWrite, () => {
+          const attempt = requireCollectionAttempt(attemptId);
+          requireKnownIssueCodes(firstPersonProfile(attempt.profile_id), issueCodes);
+        });
+        if (liveWrite) {
+          await commitLiveWrite(() => apiWrite(`${API.collectionAttempts}/${attemptId}/review`, payload, 'PATCH'));
+        } else {
+          const attempt = requireCollectionAttempt(attemptId);
+          requireKnownIssueCodes(firstPersonProfile(attempt.profile_id), issueCodes);
+          attempt.review = {
+            reviewer: currentPrincipal().actor,
+            reviewed_at: new Date().toISOString(),
+            ...payload,
+          };
+          attempt.status = collectionStatusForReviewDecision(payload.decision);
+          const run = requireCollectionRun(attempt.run_id);
+          syncCollectionRunStatus(run);
+          appendLocalAudit('collection.review', attempt.id, payload.decision);
+          persistDemoState();
+          renderAll();
         }
         break;
       }

@@ -12,8 +12,17 @@ from .repository import JsonRepository
 from .schema import (
     AnnotationTask,
     AnnotationTaskCreate,
+    AttemptReview,
+    AttemptReviewCreate,
     AuditEvent,
     AuditEventCreate,
+    CollectionAttempt,
+    CollectionAttemptCreate,
+    CollectionProfile,
+    CollectionRun,
+    CollectionRunCreate,
+    CollectionRunProgress,
+    CollectionTaskProgress,
     Dataset,
     DatasetCreate,
     Deployment,
@@ -171,6 +180,150 @@ def _collection(repo: JsonRepository, name: str) -> list[dict[str, Any]]:
     return repo.read()[name]
 
 
+def _first_person_profile() -> CollectionProfile:
+    common_checks = [
+        "speech.required_phrase",
+        "scene.clutter",
+        "scene.lighting",
+        "view.first_person",
+        "device.gripper_visibility",
+        "device.marker_visibility",
+        "audio.background_noise",
+    ]
+    tasks = [
+        ("task_01", "ordinary", "笔帽拔下后插到笔杆尾端"),
+        ("task_02", "ordinary", "杯盖盖紧后杯子倒放"),
+        ("task_03", "ordinary", "塑料袋撑开后放入空瓶并收拢袋口"),
+        ("task_04", "ordinary", "多个物体按颜色排序"),
+        ("task_05", "ordinary", "左右手按顺序抽纸巾擦桌子"),
+        ("task_06", "ordinary", "拧瓶盖"),
+        ("task_07", "speak_while_doing", "抽出碗底一次性筷子并拢摆齐"),
+        ("task_08", "speak_while_doing", "毛巾卷成一卷后放进抽屉右侧"),
+    ]
+    issue_codes = [
+        ("missing_required_speech", "必需口述缺失或不清晰", "critical"),
+        ("speech_while_motion", "常规模式口述与动作重叠", "warning"),
+        ("task_description_mismatch", "任务描述与结果不一致", "critical"),
+        ("unclear_target_object", "目标物体指代不清", "warning"),
+        ("scene_clutter_insufficient", "杂乱物数量或分布不足", "warning"),
+        ("scene_clutter_invalid_plane", "杂乱物平面或堆叠不合规", "warning"),
+        ("lighting_too_dark", "环境过暗", "warning"),
+        ("other_people_or_devices_visible", "出现其他人员或采集设备", "critical"),
+        ("gripper_out_of_frame", "夹爪出画或触碰画面边缘", "critical"),
+        ("marker_or_block_missing", "定位块或固定码可见性不足", "critical"),
+        ("motion_too_fast", "动作过快", "warning"),
+        ("background_noise", "背景音干扰", "warning"),
+        ("device_disconnect", "设备断连或重启", "critical"),
+        ("abnormal_recovery_missing", "异常情况未按规则口述恢复", "warning"),
+        ("task_specific_setup_failure", "任务特定准备不合规", "warning"),
+        ("attempt_limit_exhausted", "录制次数已用尽", "critical"),
+        ("upload_quota_incomplete", "上传数量不足", "critical"),
+    ]
+    return CollectionProfile(
+        id="first_person_trial_v1",
+        name="第一人称试采流程",
+        version=1,
+        source="Feishu workflow inspected 2026-06-08",
+        task_count_required=8,
+        default_required_uploads=6,
+        default_max_attempts=8,
+        completion_policy="uploaded_count_per_task",
+        tasks=[
+            {
+                "task_id": task_id,
+                "mode": mode,
+                "title": title,
+                "required_uploads": 6,
+                "max_attempts": 8,
+                "environment": {"clutter_min": 6 if task_id != "task_04" else 0, "first_person_view": True},
+                "target_objects": [],
+                "speech": ["操作开始", "操作结束，任务成功"] if mode == "ordinary" else ["任务名称", "作业流程"],
+                "procedure_steps": [],
+                "duration_rules": [],
+                "qc_checks": common_checks,
+                "task_notes": [],
+            }
+            for task_id, mode, title in tasks
+        ],
+        issue_codes=[
+            {"id": code, "label": label, "severity": severity}
+            for code, label, severity in issue_codes
+        ],
+    )
+
+
+def _profiles(state: dict[str, Any]) -> list[dict[str, Any]]:
+    existing = state.get("collection_profiles") or []
+    if existing:
+        return existing
+    return [_first_person_profile().model_dump(mode="json")]
+
+
+def _profile_by_id(state: dict[str, Any], profile_id: str) -> CollectionProfile:
+    for profile in _profiles(state):
+        if profile["id"] == profile_id:
+            return CollectionProfile.model_validate(profile)
+    raise HTTPException(status_code=404, detail=f"collection profile not found: {profile_id}")
+
+
+def _attempts_for_run(state: dict[str, Any], run_id: str) -> list[dict[str, Any]]:
+    return [attempt for attempt in state["collection_attempts"] if attempt["run_id"] == run_id]
+
+
+def _uploaded_status(status: str) -> bool:
+    return status in {"uploaded", "ready_for_review", "accepted", "rejected", "rework"}
+
+
+def _progress_for_run(state: dict[str, Any], run: dict[str, Any]) -> CollectionRunProgress:
+    profile = _profile_by_id(state, run["profile_id"])
+    attempts = _attempts_for_run(state, run["id"])
+    task_progress: list[CollectionTaskProgress] = []
+    for task in profile.tasks:
+        task_attempts = [attempt for attempt in attempts if attempt["task_id"] == task.task_id]
+        attempt_count = len(task_attempts)
+        uploaded_count = sum(1 for attempt in task_attempts if _uploaded_status(attempt["status"]))
+        accepted_count = sum(1 for attempt in task_attempts if attempt["status"] == "accepted")
+        remaining_attempts = max(0, task.max_attempts - attempt_count)
+        if accepted_count >= task.required_uploads:
+            task_status = "passed"
+        elif uploaded_count >= task.required_uploads:
+            task_status = "ready_for_review"
+        elif remaining_attempts == 0:
+            task_status = "blocked"
+        else:
+            task_status = "collecting"
+        task_progress.append(CollectionTaskProgress(
+            task_id=task.task_id,
+            status=task_status,
+            attempt_count=attempt_count,
+            uploaded_count=uploaded_count,
+            accepted_count=accepted_count,
+            remaining_attempts=remaining_attempts,
+            required_uploads=task.required_uploads,
+            max_attempts=task.max_attempts,
+        ))
+    blocked_task_count = sum(1 for task in task_progress if task.status == "blocked")
+    ready_task_count = sum(1 for task in task_progress if task.status in {"ready_for_review", "passed"})
+    completed_task_count = sum(1 for task in task_progress if task.status == "passed")
+    if blocked_task_count:
+        status = "blocked"
+    elif completed_task_count == profile.task_count_required:
+        status = "passed"
+    elif ready_task_count == profile.task_count_required:
+        status = "ready_for_review"
+    else:
+        status = "collecting"
+    return CollectionRunProgress(
+        run_id=run["id"],
+        profile_id=profile.id,
+        status=status,
+        completed_task_count=completed_task_count,
+        ready_task_count=ready_task_count,
+        blocked_task_count=blocked_task_count,
+        tasks=task_progress,
+    )
+
+
 def _find(state: dict[str, Any], collection: str, item_id: str) -> dict[str, Any]:
     for item in state[collection]:
         if item["id"] == item_id:
@@ -323,6 +476,128 @@ def save_annotation_task(
         return task
 
     return repo.mutate(_mutate)
+
+
+@router.get("/collection-profiles", response_model=list[CollectionProfile])
+def list_collection_profiles(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
+    return _profiles(repo.read())
+
+
+@router.get("/collection-profiles/{profile_id}", response_model=CollectionProfile)
+def get_collection_profile(profile_id: str, repo: JsonRepository = Depends(_repo)) -> CollectionProfile:
+    return _profile_by_id(repo.read(), profile_id)
+
+
+@router.get("/collection-runs", response_model=list[CollectionRun])
+def list_collection_runs(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
+    return _collection(repo, "collection_runs")
+
+
+@router.get("/collection-attempts", response_model=list[CollectionAttempt])
+def list_collection_attempts(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
+    return _collection(repo, "collection_attempts")
+
+
+@router.post("/collection-runs", response_model=CollectionRun)
+def create_collection_run(
+    req: CollectionRunCreate,
+    actor: dict[str, str] = Depends(annotation_actor),
+    repo: JsonRepository = Depends(_repo),
+) -> CollectionRun:
+    def _mutate(state: dict[str, Any]) -> CollectionRun:
+        _profile_by_id(state, req.profile_id)
+        run = CollectionRun(
+            id=new_id("crun"),
+            status="collecting",
+            created_at=now_iso(),
+            updated_at=now_iso(),
+            **req.model_dump(mode="json"),
+        )
+        state["collection_runs"].append(run.model_dump(mode="json"))
+        _append_audit(state, action="collection.run.create", resource=run.id, detail=run.subject_id, actor=actor)
+        return run
+
+    return repo.mutate(_mutate)
+
+
+@router.post("/collection-runs/{run_id}/attempts", response_model=CollectionAttempt)
+def create_collection_attempt(
+    run_id: str,
+    req: CollectionAttemptCreate,
+    actor: dict[str, str] = Depends(annotation_actor),
+    repo: JsonRepository = Depends(_repo),
+) -> CollectionAttempt:
+    def _mutate(state: dict[str, Any]) -> CollectionAttempt:
+        run = _find(state, "collection_runs", run_id)
+        profile = _profile_by_id(state, run["profile_id"])
+        task = next((task for task in profile.tasks if task.task_id == req.task_id), None)
+        if not task:
+            raise HTTPException(status_code=422, detail=f"unknown collection task: {req.task_id}")
+        if req.attempt_index > task.max_attempts:
+            raise HTTPException(status_code=422, detail=f"attempt_index exceeds max attempts for {req.task_id}")
+        existing = [
+            attempt for attempt in state["collection_attempts"]
+            if attempt["run_id"] == run_id and attempt["task_id"] == req.task_id and attempt["attempt_index"] == req.attempt_index
+        ]
+        if existing:
+            raise HTTPException(status_code=409, detail="collection attempt already exists")
+        attempt = CollectionAttempt(
+            id=new_id("cat"),
+            run_id=run_id,
+            profile_id=profile.id,
+            deleted=req.status == "deleted",
+            recorded_at=now_iso(),
+            **req.model_dump(mode="json"),
+        )
+        state["collection_attempts"].append(attempt.model_dump(mode="json"))
+        progress = _progress_for_run(state, run)
+        run.update(status=progress.status, updated_at=now_iso())
+        _append_audit(state, action="collection.attempt.create", resource=attempt.id, detail=req.task_id, actor=actor)
+        return attempt
+
+    return repo.mutate(_mutate)
+
+
+@router.patch("/collection-attempts/{attempt_id}/review", response_model=CollectionAttempt)
+def review_collection_attempt(
+    attempt_id: str,
+    req: AttemptReviewCreate,
+    actor: dict[str, str] = Depends(annotation_actor),
+    repo: JsonRepository = Depends(_repo),
+) -> CollectionAttempt:
+    def _mutate(state: dict[str, Any]) -> CollectionAttempt:
+        attempt = _find(state, "collection_attempts", attempt_id)
+        profile = _profile_by_id(state, attempt["profile_id"])
+        allowed_issue_codes = {issue.id for issue in profile.issue_codes}
+        bad_codes = [code for code in req.issue_codes if code not in allowed_issue_codes]
+        if bad_codes:
+            raise HTTPException(status_code=422, detail=f"unknown issue codes: {', '.join(bad_codes)}")
+        review = AttemptReview(
+            reviewer=actor["actor"],
+            reviewed_at=now_iso(),
+            **req.model_dump(mode="json"),
+        )
+        attempt["review"] = review.model_dump(mode="json")
+        if req.decision == "accept":
+            attempt["status"] = "accepted"
+        elif req.decision == "reject":
+            attempt["status"] = "rejected"
+        else:
+            attempt["status"] = "rework"
+        run = _find(state, "collection_runs", attempt["run_id"])
+        progress = _progress_for_run(state, run)
+        run.update(status=progress.status, updated_at=now_iso())
+        _append_audit(state, action="collection.review", resource=attempt_id, detail=req.decision, actor=actor)
+        return CollectionAttempt.model_validate(attempt)
+
+    return repo.mutate(_mutate)
+
+
+@router.get("/collection-runs/{run_id}/progress", response_model=CollectionRunProgress)
+def get_collection_run_progress(run_id: str, repo: JsonRepository = Depends(_repo)) -> CollectionRunProgress:
+    state = repo.read()
+    run = _find(state, "collection_runs", run_id)
+    return _progress_for_run(state, run)
 
 
 @router.get("/training-jobs", response_model=list[TrainingJob])

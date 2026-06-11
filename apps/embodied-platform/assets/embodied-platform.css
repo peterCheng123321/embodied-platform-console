@@ -695,6 +695,49 @@ select {
 }
 
 /* ---------------------------------------------------------------------------
+   First-person collection workflow
+   --------------------------------------------------------------------------- */
+.collection-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.25rem 0 1rem;
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.collection-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.collection-summary span {
+  color: var(--ink-muted);
+  font-family: var(--font-accent);
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.collection-summary strong {
+  min-width: 0;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+#collection-task-matrix .row > span:first-child .cell-value,
+#collection-attempt-list .row > span:first-child .cell-value {
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
    Tables (.data-table / .row) — raised header, hairline dividers, hover
    The JS table() renderer sets grid-template-columns inline on each .row.
    --------------------------------------------------------------------------- */
@@ -1110,6 +1153,10 @@ select {
   .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .collection-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -1121,6 +1168,10 @@ select {
 
   .summary-grid,
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .collection-summary {
     grid-template-columns: 1fr;
   }
 

@@ -1,0 +1,242 @@
+/* ============================================================================
+   Mission Console chassis — spec: docs/superpowers/specs/2026-06-10-*.md
+   One tiled skeleton: tree | viewport | inspector / conductor / bottombar.
+   Dark instrument ground, 1px hairline separators, NO cards/shadows/top chrome.
+   Components restyle via --ds-* re-binding; this file owns structure only.
+   ========================================================================== */
+
+.console {
+    /* token re-binding: dark instrument values for the --ds-* system that
+       embodied.css components already consume */
+    --ds-canvas: #141619;
+    --ds-surface: #1a1d20;
+    --ds-surface-sunk: #101214;
+    --ds-line: #26292e;
+    --ds-line-strong: #343a40;
+    --ds-ink: #e8ecef;
+    --ds-ink-soft: #9aa3ab;
+    --ds-ink-faint: #6a7178;
+    /* brand teal demoted out of chrome — controls take neutral ink */
+    --ds-brand: #aebfbb;
+    --ds-brand-strong: #cfdedb;
+    --ds-brand-tint: rgba(255, 255, 255, 0.06);
+    --ds-accent: #ff5a36;
+    --ds-accent-tint: rgba(255, 90, 54, 0.14);
+    --ds-shadow: none;
+    --ds-shadow-strong: none;
+    background: var(--ds-canvas);
+    color: var(--ds-ink);
+}
+
+/* ---- chassis grid ------------------------------------------------------ */
+.console-chassis {
+    display: grid;
+    height: 100vh;
+    grid-template-areas:
+        "tree viewport inspector"
+        "conductor conductor conductor"
+        "bottombar bottombar bottombar";
+    grid-template-columns: 236px minmax(0, 1fr) 320px;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 40vh) 42px;
+}
+
+.console-tree      { grid-area: tree; border-right: 1px solid var(--ds-line); overflow-y: auto; min-height: 0; }
+.console-viewport  { grid-area: viewport; overflow-y: auto; min-height: 0; }
+.console-inspector { grid-area: inspector; border-left: 1px solid var(--ds-line); overflow-y: auto; min-height: 0; }
+.console-conductor { grid-area: conductor; border-top: 1px solid var(--ds-line); overflow-y: auto; }
+.console-bottombar {
+    grid-area: bottombar;
+    border-top: 1px solid var(--ds-line);
+    background: var(--ds-surface-sunk);
+    display: flex;
+    align-items: stretch;
+}
+
+/* ---- rails ------------------------------------------------------------- */
+.console-rail-section { padding: 10px 12px; border-bottom: 1px solid var(--ds-line); }
+.console-rail-title {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ds-ink-faint);
+    margin-bottom: 8px;
+}
+/* Task context bar — first thing in the viewport; loadEpisodeMeta() fills it.
+   Collapses to nothing while empty so the demo shows no dead chrome. */
+.console-task-bar { display: flex; align-items: baseline; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--ds-line); }
+.console-task-bar:not(:has(span:not(:empty))) { display: none; }
+#task-text { font-size: 13px; color: var(--ds-ink-soft); }
+#task-text-zh { font-size: 13px; color: var(--ds-ink-faint); }
+.console-micro { font-size: 10px; }   /* Latin-only micro labels; CJK floor exception */
+.console-mono-10 { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px; }
+
+/* ---- tree -------------------------------------------------------------- */
+.console-tree-filter {
+    width: 100%;
+    background: var(--ds-surface-sunk);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-ink);
+    font-size: 13px;
+    padding: 5px 8px;
+    margin-bottom: 8px;
+}
+.console-node {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    text-align: left;
+    font-size: 13px;
+    color: var(--ds-ink-soft);
+    padding: 3px 6px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+.console-node:hover { background: var(--ds-brand-tint); color: var(--ds-ink); }
+.console-node[aria-current="true"] { background: #24303c; color: var(--ds-ink); }
+.console-node .console-node-meta { margin-left: auto; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; color: var(--ds-ink-faint); }
+.console-node-head { cursor: default; }   /* group label, not a control */
+.console-node-group { padding-left: 14px; }
+.console-node-annotated { color: #7ec98f; }
+
+/* ---- inspector --------------------------------------------------------- */
+.console-kv { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--ds-line); }
+.console-kv:last-child { border-bottom: 0; }
+.console-kv dt { color: var(--ds-ink-faint); }
+.console-kv dd { color: var(--ds-ink); font-family: "IBM Plex Mono", ui-monospace, monospace; margin: 0; }
+
+/* ---- bottom strips ------------------------------------------------------ */
+.console-modes { display: flex; align-items: stretch; }
+.console-mode {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 16px;
+    font-size: 13px;
+    color: var(--ds-ink-soft);
+    border: 0;
+    border-right: 1px solid var(--ds-line);
+    background: transparent;
+    text-decoration: none;
+    cursor: pointer;
+}
+.console-mode:hover { color: var(--ds-ink); background: var(--ds-brand-tint); }
+.console-mode[aria-current="page"] {
+    color: var(--ds-ink);
+    background: var(--ds-surface);
+    box-sizing: border-box;
+    border-top: 2px solid var(--ds-accent);
+}
+/* Inspector action buttons — block affordance, unlike the strip-item model */
+.console-action-btn {
+    font-size: 13px;
+    color: var(--ds-ink-soft);
+    background: var(--ds-brand-tint);
+    border: 1px solid var(--ds-line-strong);
+    padding: 5px 12px;
+    margin-right: 8px;
+    cursor: pointer;
+}
+.console-action-btn:hover { color: var(--ds-ink); border-color: var(--ds-ink-faint); }
+.console-status {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 14px;
+    font-size: 13px;
+    color: var(--ds-ink-faint);
+}
+.console-status kbd {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    border: 1px solid var(--ds-line-strong);
+    padding: 0 5px;
+    color: var(--ds-ink-soft);
+}
+
+/* ---- command palette (⌘K) ---------------------------------------------- */
+.console-cmdk { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding-top: 14vh; }
+.console-cmdk.hidden { display: none; }
+.console-cmdk-panel { width: min(560px, 92vw); background: var(--ds-surface); border: 1px solid var(--ds-line-strong); }
+.console-cmdk-input {
+    width: 100%;
+    background: var(--ds-surface-sunk);
+    border: 0;
+    border-bottom: 1px solid var(--ds-line);
+    color: var(--ds-ink);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    /* 14px: the only upsized text — the palette input is the page's focal point when open */
+    font-size: 14px;
+    padding: 12px 14px;
+    outline: none;
+}
+.console-cmdk-list { max-height: 320px; overflow-y: auto; }
+.console-cmdk-item { display: flex; justify-content: space-between; gap: 10px; padding: 8px 14px; font-size: 13px; color: var(--ds-ink-soft); cursor: pointer; }
+.console-cmdk-item[aria-selected="true"], .console-cmdk-item:hover { background: #24303c; color: var(--ds-ink); }
+.console-cmdk-item .console-cmdk-hint { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ds-ink-faint); }
+
+/* ---- ops console pieces ------------------------------------------------- */
+.console-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.console-table th {
+    text-align: left;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;             /* changed from 10px to respect CJK floor */
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ds-ink-faint);
+    border-bottom: 1px solid var(--ds-line-strong);
+    padding: 6px 8px;
+}
+.console-table td { border-bottom: 1px solid var(--ds-line); padding: 6px 8px; color: var(--ds-ink-soft); }
+.console-table tr:hover td, .console-table tr[aria-selected="true"] td { background: var(--ds-brand-tint); color: var(--ds-ink); }
+.console-meter { display: inline-block; width: 72px; height: 4px; background: var(--ds-line); vertical-align: middle; }
+.console-meter > span { display: block; height: 4px; background: var(--ds-ink-soft); }
+.console-meter > span.risk { background: #d98c5f; }
+.console-event { display: flex; gap: 8px; font-size: 13px; padding: 3px 0; color: var(--ds-ink-soft); }
+.console-event time { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ds-ink-faint); }
+.console-event[data-kind="pass"]   { border-left: 2px solid #7ec98f; padding-left: 8px; }
+.console-event[data-kind="risk"]   { border-left: 2px solid #d98c5f; padding-left: 8px; }
+.console-event[data-kind="assign"] { border-left: 2px solid #7b9ec9; padding-left: 8px; }
+
+/* state colors are data, not chrome */
+.console-state-pass { color: #7ec98f; }
+.console-state-risk { color: #d98c5f; }
+
+/* ---- restyle overrides for existing embodied components ----------------- */
+/* Cards dissolve into the tiling: regions separate by hairlines, not boxes. */
+.console .embodied-card { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+/* !important: .text-light is re-mapped by embodied.css inside .embodied-page
+   scope at equal-or-higher specificity for the light theme; this must win on
+   the dark ground regardless of import order. */
+.console .text-light { color: var(--ds-ink) !important; }
+
+/* ---- Task 2 dark-ground overrides (.console scope only) ---- */
+/* .embodied-video-meta chip: hardcoded rgba(255,255,255,0.86) reads as a
+   bright white pill on the dark instrument ground — replace with a dark tinted surface. */
+.console .embodied-video-meta { background: rgba(20, 22, 25, 0.82); border-color: var(--ds-line-strong); }
+/* .timeline-track-row focus highlight: white fade-to-transparent endpoint
+   of the gradient is innocuous but the brand-tint start stays appropriate. */
+.console .timeline-track-row.timeline-track-focused { background: linear-gradient(90deg, rgba(174, 191, 187, 0.08), rgba(0, 0, 0, 0)); }
+/* .embodied-page body background: token --ds-canvas re-binds correctly in
+   .console scope; no extra override needed — token handles it. */
+/* #thumb-strip background: already uses --ds-surface-sunk token — handled. */
+/* hardcoded light-theme values in embodied.css that the token re-bind can't reach */
+.console .embodied-video-frame { background: var(--ds-surface-sunk); }
+.console .embodied-video-state { background: rgba(20, 22, 25, 0.94); }
+.console #video-error { background: rgba(20, 22, 25, 0.96); }
+.console #scrub-bar { background: var(--ds-line-strong) !important; }
+.console .embodied-storage-badge[data-storage-mode="local"] { color: var(--ds-accent); }
+.console .embodied-storage-badge[data-storage-mode="pending"] { color: #d97706; }
+/* select dropdowns: embodied.css pins option backgrounds white with !important
+   at .embodied-page specificity; compound selector on the same element wins. */
+.embodied-page.console .skill-select option { background-color: var(--ds-surface-sunk) !important; color: var(--ds-ink) !important; }
+/* .console-status help button: remove right border, add left instead (rightmost item) */
+.console-status .console-mode { border-right: 0; border-left: 1px solid var(--ds-line); }
+
+/* Instrument rule: transport controls stay visible without scrolling. The
+   video's inline height (54vh) was sized for the old single-column page;
+   !important because inline style. 38vh leaves room for controls + scrub. */
+.console #video { height: min(38vh, 360px) !important; }

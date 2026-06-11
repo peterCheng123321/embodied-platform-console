@@ -4,12 +4,17 @@ import assert from 'node:assert/strict';
 
 const root = process.cwd();
 const appDir = path.join(root, 'apps', 'embodied-platform');
+const labelerDir = path.join(root, 'apps', 'embodied-labeler');
 const htmlPath = path.join(appDir, 'index.html');
 const cssPath = path.join(appDir, 'assets', 'embodied-platform.css');
 const jsPath = path.join(appDir, 'assets', 'embodied-platform.js');
 const manifestPath = path.join(appDir, 'assets', 'manifest.webmanifest');
 const iconPath = path.join(appDir, 'assets', 'icon.svg');
 const fixturePath = path.join(appDir, 'fixtures', 'demo-state.json');
+const uiRandomWalkPath = path.join(root, 'tests', 'embodied-platform-ui-random-walk.mjs');
+const backendMainPath = path.join(root, 'backend', 'api', 'main.py');
+const backendPyprojectPath = path.join(root, 'backend', 'pyproject.toml');
+const eventRoutesPath = path.join(root, 'backend', 'api', 'embodied_platform', 'event_routes.py');
 
 assert.equal(fs.existsSync(appDir), true, 'apps/embodied-platform folder should exist');
 assert.equal(fs.existsSync(htmlPath), true, 'embodied platform index.html should exist');
@@ -18,6 +23,9 @@ assert.equal(fs.existsSync(jsPath), true, 'embodied platform JS should exist');
 assert.equal(fs.existsSync(manifestPath), true, 'embodied platform PWA manifest should exist');
 assert.equal(fs.existsSync(iconPath), true, 'embodied platform should ship a PWA icon');
 assert.equal(fs.existsSync(fixturePath), true, 'embodied platform should ship demo fallback fixtures');
+assert.equal(fs.existsSync(uiRandomWalkPath), true, 'collection UI should ship a seeded browser random-walk runner');
+assert.equal(fs.existsSync(labelerDir), true, 'unified platform should mount the temporal labeler under apps/embodied-labeler');
+assert.equal(fs.existsSync(eventRoutesPath), true, 'unified host should own the retired event-ingest compatibility router');
 
 const html = fs.readFileSync(htmlPath, 'utf8');
 const css = fs.readFileSync(cssPath, 'utf8');
@@ -25,11 +33,31 @@ const js = fs.readFileSync(jsPath, 'utf8');
 const manifest = fs.readFileSync(manifestPath, 'utf8');
 const icon = fs.readFileSync(iconPath, 'utf8');
 const fixture = fs.readFileSync(fixturePath, 'utf8');
+const uiRandomWalk = fs.existsSync(uiRandomWalkPath) ? fs.readFileSync(uiRandomWalkPath, 'utf8') : '';
+const backendMain = fs.readFileSync(backendMainPath, 'utf8');
+const backendPyproject = fs.readFileSync(backendPyprojectPath, 'utf8');
+const eventRoutes = fs.readFileSync(eventRoutesPath, 'utf8');
+const labelerHtmlPath = path.join(labelerDir, 'index.html');
+const labelerJsPath = path.join(labelerDir, 'assets', 'embodied', 'embodied.js');
+const labelerConsoleJsPath = path.join(labelerDir, 'assets', 'console', 'embodied-console.js');
+const embodiedRoutesPath = path.join(root, 'backend', 'api', 'embodied', 'routes.py');
+const embodiedQcPath = path.join(root, 'backend', 'api', 'embodied', 'qc.py');
+assert.equal(fs.existsSync(labelerHtmlPath), true, 'hosted labeler should have an index.html entrypoint');
+assert.equal(fs.existsSync(labelerJsPath), true, 'hosted labeler should carry the temporal annotation JS');
+assert.equal(fs.existsSync(labelerConsoleJsPath), true, 'hosted labeler should carry console episode-tree wiring');
+assert.equal(fs.existsSync(embodiedQcPath), true, 'platform should own a small trajectory QC scorer instead of requiring the fork viewer');
+assert.equal(fs.existsSync(path.join(labelerDir, 'assets', 'console', 'ops.js')), false, 'hosted labeler should not retain obsolete split-app ops.js');
+const labelerHtml = fs.readFileSync(labelerHtmlPath, 'utf8');
+const labelerJs = fs.readFileSync(labelerJsPath, 'utf8');
+const labelerConsoleJs = fs.readFileSync(labelerConsoleJsPath, 'utf8');
+const embodiedRoutes = fs.readFileSync(embodiedRoutesPath, 'utf8');
+const embodiedQc = fs.readFileSync(embodiedQcPath, 'utf8');
 const all = `${html}\n${css}\n${js}\n${manifest}\n${icon}\n${fixture}`;
 const visibleCopy = `${html}\n${js}\n${manifest}\n${fixture}`;
 
 const modules = [
   ['data-management', 'multimodal data management'],
+  ['collection', 'first-person collection workflow'],
   ['annotation', 'intelligent annotation'],
   ['training', 'training optimization'],
   ['models', 'model version management'],
@@ -68,10 +96,39 @@ assert.doesNotMatch(
 assert.match(html, /<main class="platform-workspace"/, 'first screen should be the dense operational workspace');
 assert.doesNotMatch(html, /hero|landing|marketing/i, 'new app should not be a marketing landing page');
 
+// Unified platform seam: the full temporal labeler is no longer a separate
+// localhost app. The console hosts it and its /api/embodied compatibility
+// surface on the same origin.
+assert.match(html, /href="\/labeler\/\?dataset=demo&amp;episode=0"/, 'annotation module should open the hosted temporal labeler');
+assert.match(backendMain, /from \.embodied\.routes import router as embodied_router/, 'host backend must include the temporal labeler API router');
+assert.match(backendMain, /from \.embodied_platform\.event_routes import router as event_ingest_router/, 'host backend must include the retired event ingest router');
+assert.match(backendMain, /app\.include_router\(embodied_router\)/, 'host backend must mount /api/embodied routes');
+assert.match(backendMain, /app\.include_router\(event_ingest_router\)/, 'host backend must mount /v1/events routes');
+assert.match(backendMain, /app\.mount\(\s*"\/labeler"/, 'host backend must mount the temporal labeler under /labeler');
+assert.match(backendMain, /app\.mount\(\s*"\/embodied-assets"/, 'host backend must serve built-in labeler demo assets');
+assert.match(backendMain, /app\.mount\(\s*"\/embodied-cache"/, 'host backend must serve materialized episode bundles');
+assert.match(backendPyproject, /"pyarrow>=16"/, 'host backend must declare pyarrow for recorded LeRobot dataset routes');
+assert.doesNotMatch(`${html}\n${js}\n${labelerHtml}\n${labelerJs}\n${labelerConsoleJs}`, /127\.0\.0\.1:8000|127\.0\.0\.1:8001|localhost:8000|localhost:8001/, 'unified platform UI must not call or link to split localhost apps');
+assert.match(labelerHtml, /assets\/embodied\/embodied\.js\?v=26/, 'hosted labeler should include the reviewed v26 temporal JS');
+assert.match(labelerJs, /window\.location\.origin/, 'hosted labeler JS should default API calls to the current host origin');
+assert.match(labelerConsoleJs, /window\.location\.origin/, 'hosted labeler episode tree should default API calls to the current host origin');
+assert.match(embodiedRoutes, /\/datasets\/\{dataset_id\}\/episodes\/\{episode_index\}\/qc/, 'host backend must expose episode QC scoring on the unified API');
+assert.match(embodiedQc, /temporal_iou/, 'platform QC scorer should include temporal IoU scoring');
+assert.match(embodiedQc, /JEFFREYS_ALPHA0\s*=\s*0\.5/, 'platform QC scorer should use the LeRobot QC Jeffreys prior');
+assert.doesNotMatch(embodiedQc, /gradio|sentence_transformers|lerobot\.quality\.viewer/i, 'platform QC scorer must not depend on the standalone fork viewer stack');
+assert.match(eventRoutes, /prefix="\/v1\/events"/, 'event-ingest compatibility router should preserve the old /v1/events prefix');
+assert.match(eventRoutes, /@router\.post\("\/label"/, 'event-ingest compatibility router should expose label batches');
+assert.match(eventRoutes, /@router\.post\("\/telemetry"/, 'event-ingest compatibility router should expose telemetry batches');
+assert.match(eventRoutes, /existing_ids/, 'event-ingest compatibility router should deduplicate by client event_id');
+assert.match(backendMain, /POST \/v1\/events/, 'main entrypoint docs should advertise the unified event-ingest surface');
+
 const primaryActions = [
   'create-dataset',
   'create-episode',
   'start-import',
+  'create-collection-run',
+  'register-collection-attempt',
+  'review-collection-attempt',
   'save-annotation',
   'start-training',
   'activate-model',
@@ -93,6 +150,9 @@ for (const endpoint of [
   '/api/embodied-platform/episodes',
   '/api/embodied-platform/imports',
   '/api/embodied-platform/annotation-tasks',
+  '/api/embodied-platform/collection-profiles',
+  '/api/embodied-platform/collection-runs',
+  '/api/embodied-platform/collection-attempts',
   '/api/embodied-platform/training-jobs',
   '/api/embodied-platform/models',
   '/api/embodied-platform/simulation-jobs',
@@ -120,6 +180,20 @@ assert.match(js, /state\.ready/, 'actions should be gated until initial state is
 assert.match(js, /Promise\.allSettled/, 'live reads should not silently downgrade the whole app to demo mode on one endpoint failure');
 assert.match(js, /assertOfflineReference/, 'offline-only reference checks should not block fresh live backend writes');
 assert.match(js, /refreshState\(\)/, 'live writes should refresh canonical backend state after mutation');
+assert.match(html, /试采任务进度与复核/, 'collection panel should expose first-person trial progress and review');
+assert.match(html, /id="collection-task-matrix"/, 'collection task progress matrix should exist');
+assert.match(html, /id="collection-attempt-list"/, 'collection attempt queue should exist');
+assert.match(js, /collectionProgressForRun/, 'collection progress should be computed deterministically in the frontend');
+assert.match(js, /collection\.attempt\.create/, 'collection attempt registration should write an audit event');
+assert.match(js, /collection\.review/, 'collection review should write an audit event');
+assert.match(fixture, /collection_runs/, 'demo fixture should include collection runs');
+assert.match(fixture, /collection_attempts/, 'demo fixture should include collection attempts');
+assert.match(css, /\.collection-summary/, 'collection summary should have dedicated layout styling');
+assert.match(uiRandomWalk, /runCollectionUiRandomWalk/, 'UI random walk runner should export runCollectionUiRandomWalk');
+assert.match(uiRandomWalk, /seededRandom/, 'UI random walk runner should use a deterministic seed');
+assert.match(uiRandomWalk, /collection-task-matrix/, 'UI random walk runner should inspect the task matrix');
+assert.match(uiRandomWalk, /register-collection-attempt/, 'UI random walk runner should exercise attempt registration');
+assert.match(uiRandomWalk, /review-collection-attempt/, 'UI random walk runner should exercise review submission');
 assert.match(js, /setFieldError/, 'field-level validation should render inline accessible errors');
 assert.match(js, /requireNewLearningIdentity/, 'offline learning queue should reject duplicate logical entries');
 assert.match(js, /Number\.isInteger/, 'numeric validation should require bounded integers');

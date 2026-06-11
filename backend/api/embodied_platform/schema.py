@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
-from uuid import uuid4
+from typing import Annotated, Any, Literal, Union
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic import model_validator
@@ -13,6 +13,21 @@ JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 AnnotationStatus = Literal["open", "review", "accepted", "rework"]
 DeploymentStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 LearningPriority = Literal["low", "normal", "high", "urgent"]
+CollectionRunStatus = Literal["not_started", "collecting", "ready_for_review", "passed", "failed", "blocked"]
+CollectionAttemptStatus = Literal[
+    "draft",
+    "recorded",
+    "uploaded",
+    "ready_for_review",
+    "accepted",
+    "rejected",
+    "rework",
+    "deleted",
+    "blocked",
+]
+CollectionTaskMode = Literal["ordinary", "speak_while_doing"]
+ReviewDecision = Literal["accept", "reject", "needs_rework"]
+CheckResult = Literal["pass", "fail", "not_applicable"]
 
 
 def new_id(prefix: str) -> str:
@@ -32,6 +47,10 @@ class StrictModel(BaseModel):
         if isinstance(value, str):
             return value.strip()
         return value
+
+
+class EventModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class DatasetCreate(StrictModel):
@@ -105,6 +124,124 @@ class AnnotationTask(AnnotationTaskCreate):
     id: str
     label_count: int = Field(ge=0)
     updated_at: str
+
+
+class IssueCode(StrictModel):
+    id: str = Field(min_length=1, max_length=80)
+    label: str = Field(min_length=1, max_length=120)
+    severity: Literal["info", "warning", "critical"] = "warning"
+
+
+class CollectionTask(StrictModel):
+    task_id: str = Field(min_length=1, max_length=40)
+    mode: CollectionTaskMode
+    title: str = Field(min_length=1, max_length=160)
+    required_uploads: int = Field(ge=1, le=20)
+    max_attempts: int = Field(ge=1, le=50)
+    environment: dict[str, str | int | bool] = Field(default_factory=dict)
+    target_objects: list[str] = Field(default_factory=list)
+    speech: list[str] = Field(default_factory=list)
+    procedure_steps: list[str] = Field(default_factory=list)
+    duration_rules: list[str] = Field(default_factory=list)
+    qc_checks: list[str] = Field(default_factory=list)
+    task_notes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_quota_fits_attempts(self) -> "CollectionTask":
+        if self.required_uploads > self.max_attempts:
+            raise ValueError("required_uploads must be less than or equal to max_attempts")
+        return self
+
+
+class CollectionProfile(StrictModel):
+    id: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=160)
+    version: int = Field(ge=1)
+    source: str = Field(min_length=1, max_length=240)
+    task_count_required: int = Field(ge=1, le=100)
+    default_required_uploads: int = Field(ge=1, le=20)
+    default_max_attempts: int = Field(ge=1, le=50)
+    completion_policy: str = Field(min_length=1, max_length=120)
+    tasks: list[CollectionTask]
+    issue_codes: list[IssueCode]
+
+    @model_validator(mode="after")
+    def _check_task_count(self) -> "CollectionProfile":
+        if len(self.tasks) != self.task_count_required:
+            raise ValueError("tasks length must equal task_count_required")
+        return self
+
+
+class CollectionRunCreate(StrictModel):
+    profile_id: str = Field(min_length=1, max_length=80)
+    subject_id: str = Field(min_length=1, max_length=120)
+    assignee: str = Field(min_length=1, max_length=120)
+
+
+class CollectionRun(CollectionRunCreate):
+    id: str
+    status: CollectionRunStatus = "collecting"
+    created_at: str
+    updated_at: str
+
+
+class CollectionAttemptCreate(StrictModel):
+    task_id: str = Field(min_length=1, max_length=40)
+    attempt_index: int = Field(ge=1, le=50)
+    video_uri: str = Field(min_length=1, max_length=500)
+    duration_seconds: float | None = Field(default=None, ge=0, le=3600)
+    frame_count: int | None = Field(default=None, ge=0, le=1000000)
+    status: CollectionAttemptStatus = "uploaded"
+    transcript: str | None = Field(default=None, max_length=2000)
+
+
+class ReviewCheckResult(StrictModel):
+    check_id: str = Field(min_length=1, max_length=120)
+    result: CheckResult
+    note: str = Field(default="", max_length=500)
+
+
+class AttemptReviewCreate(StrictModel):
+    decision: ReviewDecision
+    check_results: list[ReviewCheckResult] = Field(default_factory=list)
+    issue_codes: list[str] = Field(default_factory=list)
+    notes: str = Field(default="", max_length=1000)
+
+
+class AttemptReview(AttemptReviewCreate):
+    reviewer: str
+    reviewed_at: str
+
+
+class CollectionAttempt(CollectionAttemptCreate):
+    id: str
+    run_id: str
+    profile_id: str
+    deleted: bool = False
+    recorded_at: str
+    review: AttemptReview | None = None
+    segment_annotation_ref: str | None = Field(default=None, max_length=240)
+
+
+class CollectionTaskProgress(StrictModel):
+    task_id: str
+    status: Literal["collecting", "ready_for_review", "passed", "blocked"]
+    attempt_count: int
+    uploaded_count: int
+    accepted_count: int
+    remaining_attempts: int
+    required_uploads: int
+    max_attempts: int
+
+
+class CollectionRunProgress(StrictModel):
+    run_id: str
+    profile_id: str
+    status: CollectionRunStatus
+    completed_task_count: int
+    ready_task_count: int
+    blocked_task_count: int
+    tasks: list[CollectionTaskProgress]
 
 
 class TrainingJobCreate(StrictModel):
@@ -210,6 +347,275 @@ class SessionResponse(StrictModel):
     role: str
     signature: str
     issued_at: str
+
+
+class BBoxGeometry(EventModel):
+    shape: Literal["bbox"] = "bbox"
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    slice_index: int | None = Field(default=None, ge=0)
+
+
+class PolygonGeometry(EventModel):
+    shape: Literal["polygon"] = "polygon"
+    vertices: list[tuple[float, float]] = Field(min_length=3)
+    slice_index: int | None = Field(default=None, ge=0)
+
+    @field_validator("vertices")
+    @classmethod
+    def _no_explicit_close(cls, value: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        if len(value) >= 4 and value[0] == value[-1]:
+            raise ValueError("polygon vertices must not repeat the first point at the end")
+        return value
+
+
+class MaskGeometry(EventModel):
+    shape: Literal["mask"] = "mask"
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    rle_counts: str = Field(min_length=1)
+    slice_index: int | None = Field(default=None, ge=0)
+
+
+class KeypointGeometry(EventModel):
+    shape: Literal["keypoint"] = "keypoint"
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    visible: bool = True
+    slice_index: int | None = Field(default=None, ge=0)
+
+
+EventGeometry = Annotated[
+    Union[BBoxGeometry, PolygonGeometry, MaskGeometry, KeypointGeometry],
+    Field(discriminator="shape"),
+]
+
+
+LabelOrigin = Literal["human", "human_edited", "model_accepted", "adjudicator"]
+
+
+class ObjectCreatedPayload(EventModel):
+    event_type: Literal["object.created"] = "object.created"
+    client_object_id: UUID
+    class_id: UUID
+    geometry: EventGeometry
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    origin: LabelOrigin
+    prelabel_model: str | None = Field(default=None, max_length=120)
+    prelabel_confidence: float | None = Field(default=None, ge=0, le=1)
+    self_confidence: float | None = Field(default=None, ge=0, le=1)
+    first_click_xy: tuple[float, float] | None = None
+    drawn_with: Literal["mouse", "hotkey", "sam_click", "sam_text", "tracker"] = "mouse"
+
+
+class ObjectEditedPayload(EventModel):
+    event_type: Literal["object.edited"] = "object.edited"
+    client_object_id: UUID
+    edit_type: Literal["vertex_move", "resize", "translate", "reshape", "mask_paint"]
+    new_geometry: EventGeometry
+    delta_px: float | None = Field(default=None, ge=0)
+
+
+class ObjectDeletedPayload(EventModel):
+    event_type: Literal["object.deleted"] = "object.deleted"
+    client_object_id: UUID
+    age_ms: int | None = Field(default=None, ge=0)
+
+
+class ClassChangedPayload(EventModel):
+    event_type: Literal["class.changed"] = "class.changed"
+    client_object_id: UUID
+    new_class_id: UUID
+
+
+class AttributeChangedPayload(EventModel):
+    event_type: Literal["attribute.changed"] = "attribute.changed"
+    client_object_id: UUID
+    attributes: dict[str, Any]
+
+
+class ActionUndoPayload(EventModel):
+    event_type: Literal["action.undo"] = "action.undo"
+    target_event_id: UUID
+
+
+class ActionRedoPayload(EventModel):
+    event_type: Literal["action.redo"] = "action.redo"
+    target_event_id: UUID
+
+
+class LabelSubmittedPayload(EventModel):
+    event_type: Literal["label.submitted"] = "label.submitted"
+    duration_ms: int = Field(ge=0)
+    active_ms: int = Field(ge=0)
+    idle_ms: int = Field(ge=0)
+    self_confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class LabelUnsubmittedPayload(EventModel):
+    event_type: Literal["label.unsubmitted"] = "label.unsubmitted"
+    reopened_by: UUID
+    reason: str = Field(min_length=1, max_length=1024)
+
+
+LabelEventPayload = Annotated[
+    Union[
+        ObjectCreatedPayload,
+        ObjectEditedPayload,
+        ObjectDeletedPayload,
+        ClassChangedPayload,
+        AttributeChangedPayload,
+        ActionUndoPayload,
+        ActionRedoPayload,
+        LabelSubmittedPayload,
+        LabelUnsubmittedPayload,
+    ],
+    Field(discriminator="event_type"),
+]
+
+
+class LabelEventIn(EventModel):
+    event_id: UUID
+    task_id: UUID
+    annotator_id: UUID
+    payload: LabelEventPayload
+    ts_client: datetime
+    schema_version: int = Field(default=1, ge=1)
+
+
+class SessionStartedPayload(EventModel):
+    event_type: Literal["session.started"] = "session.started"
+    device_class: Literal["desktop", "laptop", "tablet", "mobile"]
+    input_device: Literal["mouse", "trackpad", "stylus", "touch"]
+    screen_bucket: Literal["sub_1080", "1080_to_1440", "1440_to_4k", "4k_plus"]
+    locale: str = Field(min_length=1, max_length=1024)
+    rtt_ms: int | None = Field(default=None, ge=0)
+
+
+class SessionEndedPayload(EventModel):
+    event_type: Literal["session.ended"] = "session.ended"
+    reason: Literal["submit", "idle", "logout", "crash"]
+
+
+class TaskOpenedPayload(EventModel):
+    event_type: Literal["task.opened"] = "task.opened"
+    task_class: str | None = Field(default=None, max_length=1024)
+    has_model_prelabel: bool
+    prelabel_hash: str | None = Field(default=None, max_length=1024)
+
+
+class TaskSubmittedPayload(EventModel):
+    event_type: Literal["task.submitted"] = "task.submitted"
+    duration_ms: int = Field(ge=0)
+    active_ms: int = Field(ge=0)
+    idle_ms: int = Field(ge=0)
+    self_confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class TaskAbandonedPayload(EventModel):
+    event_type: Literal["task.abandoned"] = "task.abandoned"
+    duration_ms: int = Field(ge=0)
+    last_state: Literal["nothing_drawn", "partial", "complete_unsubmitted"]
+
+
+class FocusChangedPayload(EventModel):
+    event_type: Literal["focus.changed"] = "focus.changed"
+    state: Literal["lost", "gained"]
+
+
+class ViewportChangedPayload(EventModel):
+    event_type: Literal["viewport.changed"] = "viewport.changed"
+    zoom: float = Field(gt=0)
+    pan_x: float
+    pan_y: float
+    viewport_rect: tuple[float, float, float, float]
+
+
+class HoverObservedPayload(EventModel):
+    event_type: Literal["hover.observed"] = "hover.observed"
+    target: Literal["object", "class_palette", "prelabel"]
+    target_id: UUID | None = None
+    duration_ms: int = Field(ge=0)
+
+
+class HotkeyUsedPayload(EventModel):
+    event_type: Literal["hotkey.used"] = "hotkey.used"
+    key: str = Field(min_length=1, max_length=1024)
+    action: str = Field(min_length=1, max_length=1024)
+
+
+class ReviewOutcomePayload(EventModel):
+    event_type: Literal["review.outcome"] = "review.outcome"
+    reviewer_id: UUID
+    verdict: Literal["accept", "edit", "reject"]
+    overturn: bool
+
+
+class GoldOutcomePayload(EventModel):
+    event_type: Literal["gold.outcome"] = "gold.outcome"
+    gold_task_id: UUID
+    iou: float = Field(ge=0, le=1)
+    class_match: bool
+    accuracy_score: float = Field(ge=0, le=1)
+
+
+class ObjectFirstClickPayload(EventModel):
+    event_type: Literal["object.first_click"] = "object.first_click"
+    client_object_id: UUID
+    first_click_xy: tuple[float, float]
+
+
+class UnsureRaisedPayload(EventModel):
+    event_type: Literal["unsure.raised"] = "unsure.raised"
+    reason: Literal["ambiguous_class", "blurry_image", "edge_case", "taxonomy_gap", "needs_SME", "other"]
+    free_text: str | None = Field(default=None, max_length=1000)
+
+
+TelemetryEventPayload = Annotated[
+    Union[
+        SessionStartedPayload,
+        SessionEndedPayload,
+        TaskOpenedPayload,
+        TaskSubmittedPayload,
+        TaskAbandonedPayload,
+        FocusChangedPayload,
+        ViewportChangedPayload,
+        HoverObservedPayload,
+        HotkeyUsedPayload,
+        ReviewOutcomePayload,
+        GoldOutcomePayload,
+        ObjectFirstClickPayload,
+        UnsureRaisedPayload,
+    ],
+    Field(discriminator="event_type"),
+]
+
+
+class TelemetryEventIn(EventModel):
+    event_id: UUID
+    session_id: UUID
+    annotator_id: UUID
+    project_id: UUID | None = None
+    task_id: UUID | None = None
+    payload: TelemetryEventPayload
+    ts_client: datetime
+    schema_version: int = Field(default=1, ge=1)
+
+
+class LabelEventBatch(EventModel):
+    events: list[LabelEventIn] = Field(min_length=1, max_length=500)
+
+
+class TelemetryEventBatch(EventModel):
+    events: list[TelemetryEventIn] = Field(min_length=1, max_length=1000)
+
+
+class EventIngestResponse(EventModel):
+    accepted: int
+    deduplicated: int
+    rejected: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class MonitoringOverview(StrictModel):
