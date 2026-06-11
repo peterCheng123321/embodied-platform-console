@@ -5,7 +5,8 @@ modules spanning the full lifecycle (Data → Collection → Annotation → Trai
 Deployment → Online Learning → Monitoring → Audit → System), built as an **offline-capable PWA** over a small,
 **zero-infrastructure FastAPI** backend that persists to an atomic, file-locked JSON store.
 
-The UI is a clean **blue + white** instrument theme (IBM Plex Sans SC / Plex Mono / Chakra Petch),
+The UI carries the XINGJU (星聚) **"Clinical Precision" teal + white** instrument identity
+(IBM Plex Sans SC / Plex Mono, coral signal accent reserved for navigation — never status),
 fully in Simplified Chinese, with a live-API mode that gracefully falls back to an offline demo.
 
 > Single-operator / internal-tool scope by design: file-based persistence, signed-header auth, no
@@ -36,9 +37,16 @@ backend stopped, the SPA still runs fully in **offline demo** mode (localStorage
   / safety-event), training jobs, model registry + activation, simulation/sim2real jobs, edge
   deployments, an online-learning queue, a visual monitoring board (metric tiles + sim-success gauge),
   an append-only audit log, and system settings.
-- **Hosted temporal labeler**: the frame-accurate LeRobot segment labeler is mounted at `/labeler/`
-  in the same FastAPI app, with its `/api/embodied/*`, `/embodied-assets`, and `/embodied-cache`
-  compatibility surface served by this platform host.
+- **LeRobot ingest + QC gate**: `POST /api/embodied-platform/imports` parses a real LeRobot dataset
+  root into datasets/episodes, `GET /api/embodied-platform/datasets/{id}/qc` scores dataset quality
+  (episode-level scoring at `GET /api/embodied/datasets/{id}/episodes/{n}/qc`), and
+  `POST /api/embodied-platform/datasets/{id}/trained-ready` flips the trained-ready flag only when
+  the QC gate passes (409 otherwise).
+- **Hosted temporal labeler**: the frame-accurate LeRobot segment labeler (v27, with the upstream
+  frame-review behavioral fixes re-ported: pause-on-step, open-segment save guard, Cmd/Ctrl-digit
+  guard, ⌘S from any focus) is mounted at `/labeler/` in the same FastAPI app, with its
+  `/api/embodied/*`, `/embodied-assets`, and `/embodied-cache` compatibility surface served by
+  this platform host.
 - **Auth & governance**: 6-role RBAC mirrored frontend + backend, HMAC-signed writes verified with
   constant-time comparison, a `/session` login that mints the signature, and an audit event on every
   mutation. Job records enforce a legal state machine; references are integrity-checked.
@@ -66,14 +74,14 @@ scripts/run.sh                 # one-command run (API + SPA, same origin)
 ## Tests
 
 ```bash
-cd backend && python -m pytest tests -q                     # API + hosted labeler + e2e
+cd backend && python3 -m pytest tests -q                    # API + hosted labeler + e2e (175+ tests)
 node tests/embodied-platform-audit.mjs                      # design/structure audit (from repo root)
 ```
 
 Adversarial collection checks:
 
 ```bash
-cd backend && python -m pytest tests/embodied_platform/test_collection_adversarial_agents.py -q
+cd backend && python3 -m pytest tests/embodied_platform/test_collection_adversarial_agents.py -q
 ```
 
 The browser random walker is reusable from the Codex in-app browser session:
@@ -93,6 +101,7 @@ const report = await mod.runCollectionUiRandomWalk({ tab, seed: 424242, steps: 3
 | `XINGJU_EMBODIED_DATA_ROOT` | Temporal labeler segment JSONL store | `backend/data/embodied` |
 | `XINGJU_EMBODIED_CACHE_ROOT` | Materialized LeRobot episode bundle cache | `backend/data/embodied_cache` |
 | `XINGJU_EMBODIED_DATASET_ROOT` | Optional recorded LeRobot dataset root exposed as `recorded` | unset |
+| `XINGJU_CORS_ORIGINS` | Comma-separated CORS allowlist for the API | `http://127.0.0.1:8099,http://localhost:8099` |
 
 **Security note:** the defaults above are local-dev placeholders. Set your own strong values and
 front `/session` with real SSO before exposing this anywhere.
