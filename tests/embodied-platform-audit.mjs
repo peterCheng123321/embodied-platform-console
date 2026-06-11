@@ -236,34 +236,39 @@ assert.match(sw, new RegExp(`embodied-platform\\.css\\?v=${cssVersion}`), 'servi
 assert.match(sw, new RegExp(`embodied-platform\\.js\\?v=${jsVersion}`), 'service worker JS cache version should match index.html');
 
 // ---------------------------------------------------------------------------
-// §4 redesign markers — "Azure" light blue + white instrument console.
-// These assert the actual re-theme is present (would fail on a revert to the
-// old dark Ground Control teal-green theme / plain-table monitoring / unstyled
-// tags), not tautologies.
+// §4 redesign markers — XINGJU "Clinical Precision" teal + white instrument
+// console. These assert the actual re-theme is present (would fail on a revert
+// to the Azure blue theme or the old dark Ground Control theme / plain-table
+// monitoring / unstyled tags), not tautologies.
 // ---------------------------------------------------------------------------
 
-// Azure light design tokens defined in :root (spec §2).
-for (const token of ['--bg:', '--surface:', '--surface-2:', '--hairline:', '--ink:', '--brand:', '--brand-lum:', '--st-info:', '--st-ok:', '--st-warn:', '--st-danger:']) {
+// XINGJU teal design tokens defined in :root (spec §2).
+for (const token of ['--bg:', '--surface:', '--surface-2:', '--hairline:', '--ink:', '--brand:', '--brand-lum:', '--accent:', '--st-info:', '--st-ok:', '--st-warn:', '--st-danger:']) {
   assert.match(css, new RegExp(token.replace(/[-]/g, '\\$&')), `design token ${token} should be defined in CSS :root`);
 }
-assert.match(css, /--bg:\s*#f4f7fb/, 'app background should be the cool white-blue Azure surface');
-assert.match(css, /--surface:\s*#ffffff/, 'panels should be white cards in the Azure light theme');
-assert.match(css, /--ink:\s*#0f2747/, 'primary text should be the deep navy ink');
-assert.match(css, /--brand-lum:\s*#2563eb/, 'vivid azure accent should be defined');
-assert.match(css, /--st-ok:\s*#2563eb/, 'ok/active status should be on-brand blue — no green in the palette');
-assert.doesNotMatch(css, /#059669|rgba\(5,\s*150,\s*105/i, 'no emerald/green literals should remain (blue + white only)');
+assert.match(css, /--bg:\s*#f7faf9/, 'app background should be the teal-tint paper surface');
+assert.match(css, /--surface:\s*#ffffff/, 'panels should be white cards in the light theme');
+assert.match(css, /--ink:\s*#16201f/, 'primary text should be the deep teal-black ink');
+assert.match(css, /--brand:\s*#0d4f4a/, 'brand should be the XINGJU deep teal');
+assert.match(css, /--brand-lum:\s*#1f7a6b/, 'luminous teal accent should be defined');
+assert.match(css, /--st-ok:\s*#1f7a6b/, 'ok/active status should be green-teal (semantic fix — ok is not blue)');
+assert.match(css, /--accent:\s*#ff5a36/, 'signal coral accent should be defined (active rail + wordmark tick only)');
+assert.doesNotMatch(css, /#1e40af|#2563eb|#0ea5e9|#d97706|#dc2626|rgba\(37,\s*99,\s*235/i, 'no Azure blue / old status literals should remain');
+assert.doesNotMatch(css, /#059669|rgba\(5,\s*150,\s*105/i, 'no Tailwind emerald literals should remain (ok is the teal #1f7a6b)');
 // The old dark Ground Control teal-green palette must be fully gone.
 assert.doesNotMatch(css, /#34e0a1|#1f8f78|#2f6f63|rgba\(52,\s*224,\s*161/i, 'old teal-green brand/grain literals should be removed');
 assert.doesNotMatch(css, /--bg:\s*#08110f/, 'old dark Ground Control background should be removed');
 
-// Three Google Font families (spec §1): IBM Plex Sans SC, IBM Plex Mono, Chakra Petch.
-for (const family of ['IBM\\+Plex\\+Sans\\+SC', 'IBM\\+Plex\\+Mono', 'Chakra\\+Petch']) {
+// Two Google Font families (spec §1): IBM Plex Sans SC, IBM Plex Mono.
+for (const family of ['IBM\\+Plex\\+Sans\\+SC', 'IBM\\+Plex\\+Mono']) {
   assert.match(html, new RegExp(family), `Google Fonts link should request ${family.replace(/\\\+/g, ' ')}`);
 }
-for (const stack of ['IBM Plex Sans SC', 'IBM Plex Mono', 'Chakra Petch']) {
+assert.doesNotMatch(html, /Chakra\+Petch/, 'Chakra Petch should no longer be requested (Plex-only type system)');
+for (const stack of ['IBM Plex Sans SC', 'IBM Plex Mono']) {
   assert.match(css, new RegExp(stack), `CSS font stack should use ${stack}`);
 }
-assert.doesNotMatch(css, /font-family:[^;]*\bInter\b/i, 'Inter should be replaced by the IBM Plex / Chakra Petch type system');
+assert.doesNotMatch(css, /Chakra Petch/, 'Chakra Petch should be replaced by IBM Plex Mono in --font-accent');
+assert.doesNotMatch(css, /font-family:[^;]*\bInter\b/i, 'Inter should be replaced by the IBM Plex type system');
 
 // Semantic status tag classes (spec §2 status->token map).
 for (const cls of ['.tag--neutral', '.tag--info', '.tag--ok', '.tag--warn', '.tag--danger', '.tag--faint']) {
@@ -313,12 +318,13 @@ assert.match(js, /renderPrincipal/, 'header should reflect the signed-in princip
 assert.match(js, /\.module-panel input, \.module-panel select/, 'write-form locking must be scoped to module panels so login stays usable');
 assert.doesNotMatch(js, /querySelectorAll\('input, select'\)/, 'form-locking must not blanket-disable every input/select (would deadlock login)');
 
-// PWA light theming (spec §4) — Azure blue + white.
+// PWA light theming (spec §4) — XINGJU teal + white.
 assert.match(html, /<meta name="theme-color" content="#ffffff">/, 'theme-color meta should be the light white surface');
 assert.match(manifest, /"theme_color":\s*"#ffffff"/, 'manifest theme_color should be light');
-assert.match(manifest, /"background_color":\s*"#f4f7fb"/, 'manifest background_color should be the cool white-blue surface');
-assert.match(icon, /#ffffff/, 'PWA icon should adopt the white Azure surface');
-assert.match(icon, /#2563eb/, 'PWA icon should carry the vivid azure brand accent');
+assert.match(manifest, /"background_color":\s*"#f7faf9"/, 'manifest background_color should be the teal-tint paper surface');
+assert.match(icon, /#ffffff/, 'PWA icon should adopt the white light surface');
+assert.match(icon, /#0d4f4a/, 'PWA icon should carry the XINGJU deep teal brand');
+assert.doesNotMatch(icon, /#1e40af|#2563eb/, 'PWA icon should drop the Azure blue fills');
 assert.doesNotMatch(icon, /#08110f|#34e0a1|#1f8f78/, 'PWA icon should drop the old dark teal-green fills');
 
 console.log('Embodied platform audit passed');

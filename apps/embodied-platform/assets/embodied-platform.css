@@ -1,38 +1,41 @@
 /* ===========================================================================
-   具身平台运营台 — "Azure" light blue + white instrument-console design system
+   星聚 · 具身平台运营台 — XINGJU teal + white instrument-console design system
    Plain CSS, no build step. Fonts loaded via Google Fonts <link> in index.html:
      IBM Plex Sans SC  -> UI / body / CJK
      IBM Plex Mono     -> data / metrics / IDs / timestamps (tabular numerals)
-     Chakra Petch      -> Latin display accents (eyebrows, wordmark, units)
+                          + Latin display accents (eyebrows, units)
    =========================================================================== */
 
 :root {
   /* surfaces & elevation */
-  --bg: #f4f7fb;
+  --bg: #f7faf9;
   --surface: #ffffff;
-  --surface-2: #eef3fa;
-  --surface-3: #e3ecf7;
-  --hairline: #d8e2f0;
-  --hairline-strong: #c2d2e8;
+  --surface-2: #f6f7f7;
+  --surface-3: #eef2f1;
+  --hairline: rgba(13, 79, 74, 0.14);
+  --hairline-strong: rgba(13, 79, 74, 0.26);
   /* ink */
-  --ink: #0f2747;
-  --ink-muted: #51617d;
-  --ink-faint: #8595b0;
+  --ink: #16201f;
+  --ink-muted: #5e6e6b;
+  --ink-faint: #8a9996;
   /* brand */
-  --brand: #1e40af;
-  --brand-lum: #2563eb;
-  --brand-glow: rgba(37, 99, 235, 0.16);
+  --brand: #0d4f4a;
+  --brand-lum: #1f7a6b;
+  --brand-glow: rgba(13, 79, 74, 0.16);
+  /* signal coral, sparingly (active rail indicator, wordmark tick);
+     never for status */
+  --accent: #ff5a36;
   /* semantic status telemetry palette */
   --st-neutral: #64748b;
-  --st-info: #0ea5e9;
-  --st-ok: #2563eb;
-  --st-warn: #d97706;
-  --st-danger: #dc2626;
-  --shadow: 0 12px 30px rgba(15, 39, 71, 0.10);
+  --st-info: #0d6e8a;
+  --st-ok: #1f7a6b;
+  --st-warn: #b56b00;
+  --st-danger: #d92d20;
+  --shadow: 0 12px 30px rgba(22, 32, 31, 0.10);
   /* type stacks */
   --font-ui: "IBM Plex Sans SC", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
-  --font-accent: "Chakra Petch", "IBM Plex Sans SC", var(--font-ui);
+  --font-accent: "IBM Plex Mono", "IBM Plex Sans SC", var(--font-ui);
   --radius: 10px;
   --radius-sm: 7px;
 }
@@ -47,9 +50,9 @@ body {
   background-color: var(--bg);
   /* subtle atmosphere: hairline grid + fine scanline grain — no radial gradients */
   background-image:
-    repeating-linear-gradient(0deg, rgba(37, 99, 235, 0.02) 0, rgba(37, 99, 235, 0.02) 1px, transparent 1px, transparent 3px),
-    repeating-linear-gradient(90deg, rgba(37, 99, 235, 0.03) 0, rgba(37, 99, 235, 0.03) 1px, transparent 1px, transparent 64px),
-    repeating-linear-gradient(0deg, rgba(37, 99, 235, 0.03) 0, rgba(37, 99, 235, 0.03) 1px, transparent 1px, transparent 64px);
+    repeating-linear-gradient(0deg, rgba(13, 79, 74, 0.02) 0, rgba(13, 79, 74, 0.02) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(90deg, rgba(13, 79, 74, 0.03) 0, rgba(13, 79, 74, 0.03) 1px, transparent 1px, transparent 64px),
+    repeating-linear-gradient(0deg, rgba(13, 79, 74, 0.03) 0, rgba(13, 79, 74, 0.03) 1px, transparent 1px, transparent 64px);
   color: var(--ink);
   font-family: var(--font-ui);
   font-weight: 400;
@@ -121,7 +124,7 @@ button:active {
 /* Danger — muted danger outline -> danger fill on hover */
 .btn-danger {
   background: transparent;
-  border-color: rgba(220, 38, 38, 0.5);
+  border-color: rgba(217, 45, 32, 0.5);
   color: var(--st-danger);
   font-weight: 700;
 }
@@ -130,7 +133,7 @@ button:active {
   background: var(--st-danger);
   border-color: var(--st-danger);
   color: #ffffff;
-  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.22);
+  box-shadow: 0 6px 18px rgba(217, 45, 32, 0.22);
 }
 
 button:focus-visible,
@@ -171,7 +174,7 @@ button:disabled:hover {
   padding: 0.9rem 1.4rem;
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
   border-bottom: 1px solid var(--hairline);
-  box-shadow: 0 1px 0 rgba(37, 99, 235, 0.08);
+  box-shadow: 0 1px 0 rgba(13, 79, 74, 0.08);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -194,7 +197,7 @@ button:disabled:hover {
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.06), 0 0 14px var(--brand-glow);
+  box-shadow: inset 0 0 0 1px rgba(13, 79, 74, 0.06), 0 0 14px var(--brand-glow);
 }
 
 .brand-mark svg {
@@ -213,6 +216,11 @@ button:disabled:hover {
   font-size: 1.32rem;
   font-weight: 600;
   color: var(--ink);
+}
+
+/* wordmark tick — the only other place --accent may appear (never status) */
+.platform-header h1 .wordmark-tick {
+  color: var(--accent);
 }
 
 .eyebrow {
@@ -264,7 +272,7 @@ button:disabled:hover {
 
 .status-pill.live {
   color: var(--st-ok);
-  border-color: rgba(37, 99, 235,0.35);
+  border-color: rgba(31, 122, 107, 0.35);
 }
 
 .status-pill.live::before {
@@ -275,12 +283,12 @@ button:disabled:hover {
 
 .status-pill.offline {
   color: var(--st-warn);
-  border-color: rgba(217, 119, 6, 0.32);
+  border-color: rgba(181, 107, 0, 0.32);
 }
 
 .status-pill.offline::before {
   background: var(--st-warn);
-  box-shadow: 0 0 8px rgba(217, 119, 6, 0.5);
+  box-shadow: 0 0 8px rgba(181, 107, 0, 0.5);
 }
 
 /* ---------------------------------------------------------------------------
@@ -398,7 +406,7 @@ button:disabled:hover {
 
 .mode-banner.warning::before {
   background: var(--st-warn);
-  box-shadow: 0 0 8px rgba(217, 119, 6, 0.5);
+  box-shadow: 0 0 8px rgba(181, 107, 0, 0.5);
 }
 
 .mode-banner.offline {
@@ -418,7 +426,7 @@ button:disabled:hover {
 
 .mode-banner.loading::before {
   background: var(--st-info);
-  box-shadow: 0 0 8px rgba(14, 165, 233, 0.5);
+  box-shadow: 0 0 8px rgba(13, 110, 138, 0.5);
 }
 
 /* ---------------------------------------------------------------------------
@@ -492,7 +500,7 @@ button:disabled:hover {
   width: 3px;
   height: 60%;
   border-radius: 3px;
-  background: var(--brand-lum);
+  background: var(--accent);
   opacity: 0;
   transition: opacity 0.18s ease, transform 0.18s ease;
 }
@@ -508,10 +516,10 @@ button:disabled:hover {
 }
 
 .module-rail button.active {
-  background: rgba(37, 99, 235, 0.08);
+  background: rgba(13, 79, 74, 0.08);
   border-color: var(--hairline);
   color: var(--brand);
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08), 0 0 16px var(--brand-glow);
+  box-shadow: inset 0 0 0 1px rgba(13, 79, 74, 0.08), 0 0 16px var(--brand-glow);
 }
 
 .module-rail button.active .rail-icon {
@@ -521,7 +529,7 @@ button:disabled:hover {
 .module-rail button.active::before {
   opacity: 1;
   transform: translateY(-50%) scaleY(1);
-  box-shadow: 0 0 10px var(--brand-lum);
+  box-shadow: 0 0 10px var(--accent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -691,7 +699,7 @@ select {
 
 [aria-invalid="true"] {
   border-color: var(--st-danger);
-  background: rgba(220, 38, 38, 0.08);
+  background: rgba(217, 45, 32, 0.08);
 }
 
 /* ---------------------------------------------------------------------------
@@ -849,26 +857,26 @@ select {
 
 .tag--info {
   color: var(--st-info);
-  border-color: rgba(14, 165, 233, 0.32);
-  background: rgba(14, 165, 233, 0.1);
+  border-color: rgba(13, 110, 138, 0.32);
+  background: rgba(13, 110, 138, 0.1);
 }
 
 .tag--ok {
   color: var(--st-ok);
-  border-color: rgba(37, 99, 235,0.34);
-  background: rgba(37, 99, 235,0.1);
+  border-color: rgba(31, 122, 107, 0.34);
+  background: rgba(31, 122, 107, 0.1);
 }
 
 .tag--warn {
   color: var(--st-warn);
-  border-color: rgba(217, 119, 6, 0.32);
-  background: rgba(217, 119, 6, 0.1);
+  border-color: rgba(181, 107, 0, 0.32);
+  background: rgba(181, 107, 0, 0.1);
 }
 
 .tag--danger {
   color: var(--st-danger);
-  border-color: rgba(220, 38, 38, 0.34);
-  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(217, 45, 32, 0.34);
+  background: rgba(217, 45, 32, 0.1);
 }
 
 .tag--faint {
@@ -888,10 +896,10 @@ select {
 }
 
 .status-dot--neutral { background: var(--st-neutral); }
-.status-dot--info { background: var(--st-info); box-shadow: 0 0 7px rgba(14, 165, 233, 0.5); }
-.status-dot--ok { background: var(--st-ok); box-shadow: 0 0 7px rgba(37, 99, 235,0.5); }
-.status-dot--warn { background: var(--st-warn); box-shadow: 0 0 7px rgba(217, 119, 6, 0.5); }
-.status-dot--danger { background: var(--st-danger); box-shadow: 0 0 7px rgba(220, 38, 38, 0.5); }
+.status-dot--info { background: var(--st-info); box-shadow: 0 0 7px rgba(13, 110, 138, 0.5); }
+.status-dot--ok { background: var(--st-ok); box-shadow: 0 0 7px rgba(31, 122, 107, 0.5); }
+.status-dot--warn { background: var(--st-warn); box-shadow: 0 0 7px rgba(181, 107, 0, 0.5); }
+.status-dot--danger { background: var(--st-danger); box-shadow: 0 0 7px rgba(217, 45, 32, 0.5); }
 .status-dot--faint { background: var(--ink-faint); }
 
 /* ---------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 {
-  "name": "具身平台运营台",
+  "name": "星聚 · 具身平台运营台",
   "short_name": "具身运营",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f4f7fb",
+  "background_color": "#f7faf9",
   "theme_color": "#ffffff",
   "icons": [
     {
