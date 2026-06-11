@@ -22,6 +22,11 @@
     --ds-brand-tint: rgba(255, 255, 255, 0.06);
     --ds-accent: #ff5a36;
     --ds-accent-tint: rgba(255, 90, 54, 0.14);
+    /* state colors are data, not chrome — consumed by the ops-console pieces */
+    --ds-state-pass: #7ec98f;
+    --ds-state-risk: #d98c5f;
+    --ds-state-assign: #7b9ec9;
+    --ds-row-selected: #24303c;
     --ds-shadow: none;
     --ds-shadow-strong: none;
     background: var(--ds-canvas);
@@ -95,11 +100,11 @@
     cursor: pointer;
 }
 .console-node:hover { background: var(--ds-brand-tint); color: var(--ds-ink); }
-.console-node[aria-current="true"] { background: #24303c; color: var(--ds-ink); }
+.console-node[aria-current="true"] { background: var(--ds-row-selected); color: var(--ds-ink); }
 .console-node .console-node-meta { margin-left: auto; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; color: var(--ds-ink-faint); }
 .console-node-head { cursor: default; }   /* group label, not a control */
 .console-node-group { padding-left: 14px; }
-.console-node-annotated { color: #7ec98f; }
+.console-node-annotated { color: var(--ds-state-pass); }
 
 /* ---- inspector --------------------------------------------------------- */
 .console-kv { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--ds-line); }
@@ -175,7 +180,7 @@
 }
 .console-cmdk-list { max-height: 320px; overflow-y: auto; }
 .console-cmdk-item { display: flex; justify-content: space-between; gap: 10px; padding: 8px 14px; font-size: 13px; color: var(--ds-ink-soft); cursor: pointer; }
-.console-cmdk-item[aria-selected="true"], .console-cmdk-item:hover { background: #24303c; color: var(--ds-ink); }
+.console-cmdk-item[aria-selected="true"], .console-cmdk-item:hover { background: var(--ds-row-selected); color: var(--ds-ink); }
 .console-cmdk-item .console-cmdk-hint { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ds-ink-faint); }
 
 /* ---- ops console pieces ------------------------------------------------- */
@@ -194,16 +199,16 @@
 .console-table tr:hover td, .console-table tr[aria-selected="true"] td { background: var(--ds-brand-tint); color: var(--ds-ink); }
 .console-meter { display: inline-block; width: 72px; height: 4px; background: var(--ds-line); vertical-align: middle; }
 .console-meter > span { display: block; height: 4px; background: var(--ds-ink-soft); }
-.console-meter > span.risk { background: #d98c5f; }
+.console-meter > span.risk { background: var(--ds-state-risk); }
 .console-event { display: flex; gap: 8px; font-size: 13px; padding: 3px 0; color: var(--ds-ink-soft); }
 .console-event time { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ds-ink-faint); }
-.console-event[data-kind="pass"]   { border-left: 2px solid #7ec98f; padding-left: 8px; }
-.console-event[data-kind="risk"]   { border-left: 2px solid #d98c5f; padding-left: 8px; }
-.console-event[data-kind="assign"] { border-left: 2px solid #7b9ec9; padding-left: 8px; }
+.console-event[data-kind="pass"]   { border-left: 2px solid var(--ds-state-pass); padding-left: 8px; }
+.console-event[data-kind="risk"]   { border-left: 2px solid var(--ds-state-risk); padding-left: 8px; }
+.console-event[data-kind="assign"] { border-left: 2px solid var(--ds-state-assign); padding-left: 8px; }
 
 /* state colors are data, not chrome */
-.console-state-pass { color: #7ec98f; }
-.console-state-risk { color: #d98c5f; }
+.console-state-pass { color: var(--ds-state-pass); }
+.console-state-risk { color: var(--ds-state-risk); }
 
 /* ---- restyle overrides for existing embodied components ----------------- */
 /* Cards dissolve into the tiling: regions separate by hairlines, not boxes. */
