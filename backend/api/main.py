@@ -25,7 +25,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .embodied.routes import router as embodied_router
 from .embodied_platform.event_routes import router as event_ingest_router
-from .embodied_platform.routes import router as embodied_platform_router
+from .embodied_platform.routes import (
+    register_validation_handlers as register_embodied_platform_validation_handlers,
+    router as embodied_platform_router,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,10 @@ app.add_middleware(
 app.include_router(embodied_platform_router)
 app.include_router(embodied_router)
 app.include_router(event_ingest_router)
+
+# NaN-safe RequestValidationError handler (exception handlers are app-level, not
+# router-level, so the platform router cannot register this itself).
+register_embodied_platform_validation_handlers(app)
 
 
 @app.get("/healthz")

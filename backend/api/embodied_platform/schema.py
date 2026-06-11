@@ -334,6 +334,35 @@ class SystemSettings(StrictModel):
     approval_required_for_edge: bool = True
 
 
+class SystemSettingsPatch(StrictModel):
+    """Partial update for PATCH /system/settings: every field optional, so only
+    provided fields are merged onto the current settings. Each field keeps the
+    same constraints as SystemSettings so a bad value is a clean 422 at the
+    request boundary (not a 500 from constructing the merged result later).
+
+    The field types are ``... | None`` only so an OMITTED field defaults to None
+    and is dropped by ``exclude_unset`` before the merge. An EXPLICIT null on any
+    field is rejected at the boundary (422) — these settings are not nullable, so
+    merging a None into the required SystemSettings would otherwise raise a
+    ValidationError inside the mutator and surface as a 500."""
+
+    retention_days: Annotated[int, Field(ge=1, le=3650)] | None = None
+    offline_mode: bool | None = None
+    active_robot_fleet: Annotated[str, Field(min_length=1, max_length=120)] | None = None
+    approval_required_for_edge: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_explicit_null(cls, data):
+        if isinstance(data, dict):
+            nulled = [key for key, value in data.items() if value is None]
+            if nulled:
+                raise ValueError(
+                    f"system settings field(s) may not be null: {', '.join(sorted(nulled))}"
+                )
+        return data
+
+
 class SessionRequest(StrictModel):
     actor: str = Field(min_length=1, max_length=120)
     # role is a plain str so an unknown role is rejected by the endpoint with a

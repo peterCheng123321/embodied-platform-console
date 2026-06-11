@@ -3,10 +3,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import hmac
+import math
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ValidationError
 
 from .repository import JsonRepository
 from .schema import (
@@ -42,6 +47,7 @@ from .schema import (
     SimulationJobCreate,
     StatusUpdate,
     SystemSettings,
+    SystemSettingsPatch,
     TrainingJob,
     TrainingJobCreate,
     new_id,
@@ -80,9 +86,12 @@ def require_write_actor(
     x_embodied_actor: str = Header(default="anonymous"),
     x_embodied_signature: str = Header(default="", alias="X-Embodied-Signature"),
 ) -> dict[str, str]:
+    # Authenticate before authorize: verify the signature (authn) FIRST so an
+    # unauthenticated caller cannot learn the allowed-role set from the authz
+    # error message.
+    _verify_principal_signature(x_embodied_actor, x_embodied_role, x_embodied_signature)
     if x_embodied_role not in WRITE_ROLES:
         raise HTTPException(status_code=403, detail="write access requires an embodied platform write role")
-    _verify_principal_signature(x_embodied_actor, x_embodied_role, x_embodied_signature)
     return {"role": x_embodied_role, "actor": x_embodied_actor}
 
 
@@ -94,9 +103,12 @@ def require_roles(*allowed_roles: str) -> Callable[[str, str], dict[str, str]]:
         x_embodied_actor: str = Header(default="anonymous"),
         x_embodied_signature: str = Header(default="", alias="X-Embodied-Signature"),
     ) -> dict[str, str]:
+        # Authenticate before authorize: verify the signature (authn) FIRST so an
+        # unauthenticated caller cannot enumerate the allowed-role set from the
+        # authz error message.
+        _verify_principal_signature(x_embodied_actor, x_embodied_role, x_embodied_signature)
         if x_embodied_role not in allowed:
             raise HTTPException(status_code=403, detail=f"requires one of: {', '.join(sorted(allowed))}")
-        _verify_principal_signature(x_embodied_actor, x_embodied_role, x_embodied_signature)
         return {"role": x_embodied_role, "actor": x_embodied_actor}
 
     return _dependency
@@ -116,8 +128,21 @@ def _auth_secret() -> str:
     return secret
 
 
+def _canonical_principal_message(actor: str, role: str) -> bytes:
+    """Injective encoding of (actor, role) for signing.
+
+    A bare ``f"{actor}:{role}"`` join collides (sign('a','b:c') == sign('a:b','c'))
+    because a ':' in either field is indistinguishable from the separator.
+    Length-prefixing each field makes the (actor, role) -> message mapping
+    unambiguous so distinct principals never share a signed message.
+    """
+    actor_bytes = actor.encode()
+    role_bytes = role.encode()
+    return b"%d:%b:%d:%b" % (len(actor_bytes), actor_bytes, len(role_bytes), role_bytes)
+
+
 def sign_principal(actor: str, role: str) -> str:
-    return hmac.digest(_auth_secret().encode(), f"{actor}:{role}".encode(), "sha256").hex()
+    return hmac.digest(_auth_secret().encode(), _canonical_principal_message(actor, role), "sha256").hex()
 
 
 def _verify_principal_signature(actor: str, role: str, signature: str) -> None:
@@ -125,7 +150,11 @@ def _verify_principal_signature(actor: str, role: str, signature: str) -> None:
         expected = sign_principal(actor, role)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    if not signature or not hmac.compare_digest(signature, expected):
+    # Compare on bytes: hmac.compare_digest rejects non-ASCII str operands with a
+    # TypeError, which a non-ASCII signature header would otherwise turn into a
+    # 500. Encoding both operands makes such a header a clean 403 (it is simply an
+    # invalid signature).
+    if not signature or not hmac.compare_digest(signature.encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="invalid embodied platform principal signature")
 
 
@@ -144,7 +173,9 @@ def create_session(req: SessionRequest) -> SessionResponse:
     login_passcode = os.environ.get("XINGJU_EMBODIED_PLATFORM_LOGIN_PASSCODE")
     if not login_passcode:
         raise HTTPException(status_code=503, detail="login disabled")
-    if not hmac.compare_digest(req.passcode, login_passcode):
+    # Compare on bytes: hmac.compare_digest rejects non-ASCII str operands with a
+    # TypeError, which a non-ASCII passcode would otherwise turn into a 500.
+    if not hmac.compare_digest(req.passcode.encode(), login_passcode.encode()):
         raise HTTPException(status_code=401, detail="invalid passcode")
     if req.role not in WRITE_ROLES:
         raise HTTPException(status_code=403, detail="role is not an embodied platform write role")
@@ -178,6 +209,23 @@ def _append_audit(
 
 def _collection(repo: JsonRepository, name: str) -> list[dict[str, Any]]:
     return repo.read()[name]
+
+
+def _valid_rows(repo: JsonRepository, name: str, model: type[BaseModel]) -> list[BaseModel]:
+    """Read a collection and return only rows that validate against ``model``.
+
+    A persisted row missing required fields (out-of-band corruption) would make
+    FastAPI's ``response_model`` serialization raise a 500 for the whole list,
+    hiding every healthy row. Validating each row here and skipping the malformed
+    ones keeps list reads a clean 200 with the good rows. The malformed rows are
+    left ON DISK (never deleted) so an operator can repair them out of band."""
+    rows: list[BaseModel] = []
+    for row in repo.read()[name]:
+        try:
+            rows.append(model.model_validate(row))
+        except ValidationError:
+            continue
+    return rows
 
 
 def _first_person_profile() -> CollectionProfile:
@@ -326,7 +374,10 @@ def _progress_for_run(state: dict[str, Any], run: dict[str, Any]) -> CollectionR
 
 def _find(state: dict[str, Any], collection: str, item_id: str) -> dict[str, Any]:
     for item in state[collection]:
-        if item["id"] == item_id:
+        # item.get('id') (not item['id']): an id-less persisted row (out-of-band
+        # corruption) must not raise a KeyError 500 — it simply never matches and
+        # falls through to the clean 404.
+        if item.get("id") == item_id:
             return item
     raise HTTPException(status_code=404, detail=f"{collection} item not found")
 
@@ -365,8 +416,8 @@ def _transition_job(job: dict[str, Any], status: str, message: str | None) -> No
 
 
 @router.get("/datasets", response_model=list[Dataset])
-def list_datasets(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "datasets")
+def list_datasets(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "datasets", Dataset)
 
 
 @router.post("/datasets", response_model=Dataset)
@@ -390,8 +441,8 @@ def create_dataset(
 
 
 @router.get("/episodes", response_model=list[Episode])
-def list_episodes(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "episodes")
+def list_episodes(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "episodes", Episode)
 
 
 @router.post("/episodes", response_model=Episode)
@@ -416,8 +467,8 @@ def create_episode(
 
 
 @router.get("/imports", response_model=list[ImportJob])
-def list_imports(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "imports")
+def list_imports(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "imports", ImportJob)
 
 
 @router.post("/imports", response_model=ImportJob)
@@ -453,8 +504,8 @@ def update_import_status(
 
 
 @router.get("/annotation-tasks", response_model=list[AnnotationTask])
-def list_annotation_tasks(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "annotation_tasks")
+def list_annotation_tasks(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "annotation_tasks", AnnotationTask)
 
 
 @router.post("/annotation-tasks", response_model=AnnotationTask)
@@ -601,8 +652,8 @@ def get_collection_run_progress(run_id: str, repo: JsonRepository = Depends(_rep
 
 
 @router.get("/training-jobs", response_model=list[TrainingJob])
-def list_training_jobs(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "training_jobs")
+def list_training_jobs(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "training_jobs", TrainingJob)
 
 
 @router.post("/training-jobs", response_model=TrainingJob)
@@ -639,8 +690,8 @@ def update_training_status(
 
 
 @router.get("/models", response_model=list[ModelVersion])
-def list_models(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "models")
+def list_models(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "models", ModelVersion)
 
 
 @router.post("/models", response_model=ModelVersion)
@@ -681,8 +732,8 @@ def activate_model(
 
 
 @router.get("/simulation-jobs", response_model=list[SimulationJob])
-def list_simulation_jobs(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "simulation_jobs")
+def list_simulation_jobs(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "simulation_jobs", SimulationJob)
 
 
 @router.post("/simulation-jobs", response_model=SimulationJob)
@@ -719,8 +770,8 @@ def update_simulation_status(
 
 
 @router.get("/deployments", response_model=list[Deployment])
-def list_deployments(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "deployments")
+def list_deployments(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "deployments", Deployment)
 
 
 @router.post("/deployments", response_model=Deployment)
@@ -763,8 +814,8 @@ def update_deployment_status(
 
 
 @router.get("/learning-queue", response_model=list[LearningQueueItem])
-def list_learning_queue(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "learning_queue")
+def list_learning_queue(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "learning_queue", LearningQueueItem)
 
 
 @router.post("/learning-queue", response_model=LearningQueueItem)
@@ -827,8 +878,8 @@ def monitoring_overview(repo: JsonRepository = Depends(_repo)) -> MonitoringOver
 
 
 @router.get("/audit-events", response_model=list[AuditEvent])
-def list_audit_events(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
-    return _collection(repo, "audit_events")
+def list_audit_events(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
+    return _valid_rows(repo, "audit_events", AuditEvent)
 
 
 @router.post("/audit-events", response_model=AuditEvent)
@@ -849,19 +900,49 @@ def create_audit_event(
     return repo.mutate(_mutate)
 
 
+def _coerce_system_settings(stored: Any) -> SystemSettings:
+    """Repair-on-read: coerce a persisted settings blob to a valid SystemSettings.
+
+    A schema-violating settings blob (out-of-band corruption) would otherwise
+    500 every read AND every PATCH (PATCH validates the stored blob before it can
+    self-heal), leaving it unrepairable via the API. Falling back to
+    SystemSettings() defaults keeps reads/writes a clean 200; the malformed blob
+    is left on disk and is overwritten by the next successful PATCH."""
+    try:
+        return SystemSettings.model_validate(stored)
+    except ValidationError:
+        return SystemSettings()
+
+
 @router.get("/system/settings", response_model=SystemSettings)
-def get_system_settings(repo: JsonRepository = Depends(_repo)) -> dict[str, Any]:
-    return repo.read()["system_settings"]
+def get_system_settings(repo: JsonRepository = Depends(_repo)) -> SystemSettings:
+    return _coerce_system_settings(repo.read()["system_settings"])
 
 
 @router.patch("/system/settings", response_model=SystemSettings)
 def update_system_settings(
-    req: SystemSettings,
+    req: SystemSettingsPatch,
     actor: dict[str, str] = Depends(system_actor),
     repo: JsonRepository = Depends(_repo),
 ) -> SystemSettings:
+    """PARTIAL MERGE: read current settings, apply only the provided fields, and
+    validate the merged result. Omitted fields keep their current persisted
+    value (HTTP PATCH semantics) rather than reverting to schema defaults. The
+    SystemSettingsPatch model already enforced each field's constraints at the
+    boundary, and the stored settings are coerced to valid defaults before the
+    merge (repair-on-read), so constructing the merged SystemSettings cannot
+    raise — keeping the response a clean 200."""
+    provided = req.model_dump(mode="json", exclude_unset=True)
+
     def _mutate(state: dict[str, Any]) -> SystemSettings:
-        state["system_settings"] = req.model_dump(mode="json")
+        # Coerce the stored settings to valid defaults before merging so a
+        # schema-invalid persisted blob self-heals on PATCH (rather than 500ing
+        # before the merge). The patch's own input was already constraint-checked
+        # at the request boundary, so out-of-range patch values still 422.
+        current = _coerce_system_settings(state["system_settings"]).model_dump(mode="json")
+        current.update(provided)
+        merged = SystemSettings.model_validate(current)
+        state["system_settings"] = merged.model_dump(mode="json")
         _append_audit(
             state,
             action="system.settings",
@@ -869,6 +950,37 @@ def update_system_settings(
             detail="settings updated",
             actor=actor,
         )
-        return req
+        return merged
 
     return repo.mutate(_mutate)
+
+
+def _scrub_non_finite(value: Any) -> Any:
+    """Recursively replace non-finite floats (NaN/Inf) with None.
+
+    A bounded float field that rejects NaN still echoes the offending ``input``
+    into the validation-error context; that nested NaN would crash
+    ``JSONResponse.render`` (json.dumps(..., allow_nan=False)) -> 500. Scrubbing
+    keeps the 422 error body spec-compliant JSON.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _scrub_non_finite(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrub_non_finite(item) for item in value]
+    return value
+
+
+async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    detail = _scrub_non_finite(jsonable_encoder(exc.errors()))
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+
+def register_validation_handlers(app: FastAPI) -> None:
+    """Register the NaN-safe RequestValidationError handler.
+
+    Exception handlers are app-level (not router-level), so this must be called
+    on the FastAPI app — both in production (api/main.py) and in tests.
+    """
+    app.add_exception_handler(RequestValidationError, _validation_exception_handler)
