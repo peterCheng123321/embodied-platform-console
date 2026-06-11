@@ -13,6 +13,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 
+from .ingest import IngestError, IngestResult, parse_lerobot_root
+from .qc import DatasetNotFound, dataset_qc
 from .repository import JsonRepository
 from .schema import (
     AnnotationTask,
@@ -41,6 +43,8 @@ from .schema import (
     ModelVersion,
     ModelVersionCreate,
     MonitoringOverview,
+    QCReport,
+    QCThresholds,
     SessionRequest,
     SessionResponse,
     SimulationJob,
@@ -75,6 +79,13 @@ JOB_TRANSITIONS = {
     "cancelled": {"queued"},
     "succeeded": set(),
 }
+
+# Import formats the ingest pipeline can actually parse. The ImportJobCreate
+# schema's `format` Literal advertises more values, but only LeRobot has a real
+# parser (parse_lerobot_root); any other format would otherwise be silently
+# parsed AS LeRobot. The route fails the import job for an unsupported format
+# instead of misparsing it.
+SUPPORTED_IMPORT_FORMATS = {"lerobot"}
 
 
 def _repo() -> JsonRepository:
@@ -440,6 +451,100 @@ def create_dataset(
     return repo.mutate(_mutate)
 
 
+def _compute_qc(state: dict[str, Any], dataset_id: str) -> dict[str, Any]:
+    """Run dataset_qc with default thresholds, mapping a missing dataset to 404.
+
+    Only a genuinely-missing dataset (DatasetNotFound) becomes a 404. Corrupt
+    episode/label data degrades to a failing report inside dataset_qc (never a
+    KeyError), so any *other* KeyError is a real bug and surfaces loud (500)
+    rather than being masked as a misleading 404.
+    """
+    thresholds = QCThresholds().model_dump()
+    try:
+        return dataset_qc(state, dataset_id, thresholds)
+    except DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail="datasets item not found") from exc
+
+
+@router.get("/datasets/{dataset_id}/qc", response_model=QCReport)
+def get_dataset_qc(dataset_id: str, repo: JsonRepository = Depends(_repo)) -> QCReport:
+    """Read-only temporal-IoU QC report (coverage + inter-annotator agreement)."""
+    report = _compute_qc(repo.read(), dataset_id)
+    return QCReport.model_validate(report)
+
+
+def _assert_qc_passes(report: dict[str, Any]) -> None:
+    """Raise 409 with actionable reasons if the QC gate report did not pass."""
+    if report["passed"]:
+        return
+    failing = [row for row in report["episodes"] if not row["passed"]]
+    reasons = _gate_failure_reasons(report, failing)
+    raise HTTPException(
+        status_code=409,
+        detail={"message": "dataset does not pass QC gate", "reasons": reasons},
+    )
+
+
+@router.post("/datasets/{dataset_id}/trained-ready", response_model=Dataset)
+def mark_dataset_trained_ready(
+    dataset_id: str,
+    actor: dict[str, str] = Depends(ml_actor),
+    repo: JsonRepository = Depends(_repo),
+) -> Dataset:
+    """Recompute QC and set ``trained_ready`` only if the gate passes (else 409).
+
+    The (compute-bounded, see qc.MAX_* caps) QC report is computed from a
+    read-only snapshot *before* taking the exclusive write lock, so the heavy
+    matching never runs while the lock is held. Inside the mutator we re-verify
+    the gate against the locked state (cheap, bounded) so a dataset that changed
+    between the snapshot read and acquiring the lock cannot flip the flag on a
+    now-stale pass. A failed gate raises before any mutation, so the repository
+    skips the write — no trained_ready flip, no audit event on failure.
+    """
+    # 1. Expensive path: compute + gate-check on a snapshot, outside the lock.
+    _assert_qc_passes(_compute_qc(repo.read(), dataset_id))
+
+    def _mutate(state: dict[str, Any]) -> Dataset:
+        # 2. Re-verify against the locked state (guards against a concurrent
+        # change since the snapshot) and only then flip + audit.
+        report = _compute_qc(state, dataset_id)
+        _assert_qc_passes(report)
+        dataset = _find(state, "datasets", report["dataset_id"])
+        dataset["trained_ready"] = True
+        _append_audit(
+            state,
+            action="dataset.trained_ready",
+            resource=report["dataset_id"],
+            detail=f"episodes={report['episode_count']}",
+            actor=actor,
+        )
+        return Dataset.model_validate(dataset)
+
+    return repo.mutate(_mutate)
+
+
+def _gate_failure_reasons(report: dict[str, Any], failing: list[dict[str, Any]]) -> list[str]:
+    if report["episode_count"] == 0:
+        return ["dataset has no episodes to evaluate"]
+    iou_t = report["iou_threshold"]
+    cov_t = report["coverage_threshold"]
+    reasons: list[str] = []
+    for row in failing:
+        episode = row["episode_id"]
+        if row["task_count"] == 0:
+            reasons.append(f"episode {episode} has no annotation tasks")
+            continue
+        if row["coverage"] < cov_t:
+            reasons.append(
+                f"episode {episode} coverage {row['coverage']:.3f} < {cov_t}"
+            )
+        if row["agreement"] is not None and row["agreement"] < iou_t:
+            reasons.append(
+                f"episode {episode} agreement {row['agreement']:.3f} < {iou_t}"
+            )
+    return reasons
+
+
 @router.get("/episodes", response_model=list[Episode])
 def list_episodes(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
     return _valid_rows(repo, "episodes", Episode)
@@ -471,18 +576,148 @@ def list_imports(repo: JsonRepository = Depends(_repo)) -> list[BaseModel]:
     return _valid_rows(repo, "imports", ImportJob)
 
 
+def _is_local_source(source_uri: str) -> bool:
+    """True when the URI names a locally-parseable root (file:// or a plain path).
+
+    Mirrors ingest._resolve_local_root's scheme handling: anything with a
+    non-file scheme (s3://, https://, ...) is a REMOTE source the synchronous
+    parser cannot read.
+    """
+    raw = (source_uri or "").strip()
+    return raw.startswith("file://") or "://" not in raw
+
+
+def _ensure_dataset(state: dict[str, Any], name: str, ingest: IngestResult) -> dict[str, Any]:
+    """Return the dataset row for this import, creating it from ingest metadata
+    only if no matching row exists. Dedups on BOTH name and storage_uri so the
+    import path cannot create a duplicate row that POST /datasets would have
+    rejected on its storage_uri uniqueness check. Name match is checked first so
+    a pre-existing dataset with the same name (but a different storage_uri) is
+    still reused, matching the established import-into-existing behavior."""
+    for existing in state["datasets"]:
+        if existing["name"] == name:
+            return existing
+    for existing in state["datasets"]:
+        if existing.get("storage_uri") == ingest.dataset_path:
+            return existing
+    dataset = Dataset(
+        id=new_id("ds"),
+        name=name,
+        # LeRobot info.json has no modality concept; default to the platform's
+        # most common embodied modality. robot_type falls back when absent.
+        modality="vision_language_action",
+        robot_type=ingest.robot_type or "unknown",
+        storage_uri=ingest.dataset_path,
+        description=None,
+        episode_count=0,
+        created_at=now_iso(),
+    )
+    row = dataset.model_dump(mode="json")
+    state["datasets"].append(row)
+    return row
+
+
+def _materialize_episodes(state: dict[str, Any], dataset: dict[str, Any], ingest: IngestResult) -> int:
+    """Create an Episode per ingested row, deduped by episode_id within the
+    dataset. Returns the number of episodes newly created."""
+    existing_ids = {
+        ep["episode_id"]
+        for ep in state["episodes"]
+        if ep.get("dataset_id") == dataset["id"]
+    }
+    created = 0
+    for ingest_ep in ingest.episodes:
+        if ingest_ep.episode_id in existing_ids:
+            continue
+        episode = Episode(
+            id=new_id("ep"),
+            dataset_id=dataset["id"],
+            episode_id=ingest_ep.episode_id,
+            robot_cell=None,
+            frame_count=ingest_ep.frame_count,
+            created_at=now_iso(),
+        )
+        state["episodes"].append(episode.model_dump(mode="json"))
+        existing_ids.add(ingest_ep.episode_id)
+        created += 1
+    dataset["episode_count"] = int(dataset.get("episode_count", 0)) + created
+    return created
+
+
 @router.post("/imports", response_model=ImportJob)
 def create_import(
     req: ImportJobCreate,
     actor: dict[str, str] = Depends(data_actor),
     repo: JsonRepository = Depends(_repo),
 ) -> ImportJob:
+    """Create an import job and, for LOCAL LeRobot sources, RUN the ingest
+    synchronously.
+
+    A local (file:// or plain-path) source is parsed BEFORE the exclusive
+    repository write lock is taken — parse_lerobot_root does filesystem I/O, and
+    holding the write lock through it would block every other write for the
+    parse duration. The job is then driven queued->running->succeeded on a clean
+    parse (creating the Dataset if missing and materializing Episode records),
+    or queued->running->failed with the error message on any parse/validation
+    failure. Parsing happens before any dataset/episode mutation, so a failed
+    import only ever leaves the failed job record behind — never a partial
+    dataset. We return the persisted job (200) in both cases so failures stay
+    queryable and audited.
+
+    A NON-local source (e.g. s3://) keeps the console's original contract: the
+    job is recorded as queued and an external worker drives it through the
+    PATCH /imports/{job_id}/status flow.
+    """
+    failure: str | None = None
+    ingest: IngestResult | None = None
+    external = False
+    if req.format not in SUPPORTED_IMPORT_FORMATS:
+        # Only LeRobot has a real parser; any other advertised format would be
+        # silently parsed as LeRobot. Fail the job with a clear message (and audit
+        # it) instead of misparsing — mirroring the IngestError failure path so
+        # the unsupported-format attempt stays queryable.
+        failure = (
+            f"unsupported import format {req.format!r}: only "
+            f"{', '.join(sorted(SUPPORTED_IMPORT_FORMATS))} is supported"
+        )
+    elif not _is_local_source(req.source_uri):
+        external = True
+    else:
+        try:
+            # Outside repo.mutate() on purpose: never parse while holding the lock.
+            ingest = parse_lerobot_root(req.source_uri)
+        except IngestError as exc:
+            failure = str(exc)
+
     def _mutate(state: dict[str, Any]) -> ImportJob:
         ts = now_iso()
         job = ImportJob(id=new_id("imp"), created_at=ts, updated_at=ts, **req.model_dump(mode="json"))
-        state["imports"].append(job.model_dump(mode="json"))
+        job_row = job.model_dump(mode="json")
+        state["imports"].append(job_row)
         _append_audit(state, action="import.create", resource=job.id, detail=req.source_uri, actor=actor)
-        return job
+
+        if external:
+            # Remote source: leave the job queued for the external status-PATCH
+            # flow (the synchronous parser only reads local roots).
+            job_row.update(message="queued for external ingest via status updates", updated_at=now_iso())
+            return ImportJob.model_validate(job_row)
+
+        _transition_job(job_row, "running", "ingest started")
+        if failure is not None:
+            _transition_job(job_row, "failed", failure)
+            _append_audit(state, action="import.failed", resource=job.id, detail=failure, actor=actor)
+            return ImportJob.model_validate(job_row)
+
+        dataset = _ensure_dataset(state, req.dataset_name, ingest)
+        created = _materialize_episodes(state, dataset, ingest)
+        # Name the dataset that ACTUALLY received the episodes. When ingest reuses
+        # an existing dataset by storage_uri (or name), that row's name differs
+        # from req.dataset_name, which was never created — so the message/audit
+        # must reflect the reused dataset, not the requested-but-unused name.
+        message = f"ingested {created} episodes into {dataset['name']}"
+        _transition_job(job_row, "succeeded", message)
+        _append_audit(state, action="import.succeeded", resource=job.id, detail=message, actor=actor)
+        return ImportJob.model_validate(job_row)
 
     return repo.mutate(_mutate)
 

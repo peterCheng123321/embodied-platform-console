@@ -65,6 +65,8 @@ class Dataset(DatasetCreate):
     id: str
     episode_count: int = Field(ge=0)
     created_at: str
+    # Defaulted so datasets persisted before the QC gate existed still validate.
+    trained_ready: bool = False
 
 
 class EpisodeCreate(StrictModel):
@@ -392,6 +394,32 @@ class SessionResponse(StrictModel):
     role: str
     signature: str
     issued_at: str
+
+
+class QCThresholds(StrictModel):
+    # allow_inf_nan=False so a NaN/Inf override is a clean 422, never a silent
+    # comparison that always (or never) passes the gate.
+    iou_threshold: float = Field(default=0.7, ge=0, le=1, allow_inf_nan=False)
+    coverage_threshold: float = Field(default=0.9, ge=0, le=1, allow_inf_nan=False)
+
+
+class QCEpisodeRow(StrictModel):
+    episode_id: str
+    frame_count: int = Field(ge=0)
+    task_count: int = Field(ge=0)
+    coverage: float = Field(ge=0, le=1, allow_inf_nan=False)
+    # None when fewer than two annotation tasks exist for the episode.
+    agreement: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    passed: bool
+
+
+class QCReport(StrictModel):
+    dataset_id: str
+    passed: bool
+    episode_count: int = Field(ge=0)
+    iou_threshold: float = Field(ge=0, le=1, allow_inf_nan=False)
+    coverage_threshold: float = Field(ge=0, le=1, allow_inf_nan=False)
+    episodes: list[QCEpisodeRow] = Field(default_factory=list)
 
 
 class BBoxGeometry(EventModel):
