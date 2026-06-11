@@ -292,6 +292,16 @@ function updateTimeUI() {
 }
 
 function stepFrame(delta) {
+    // NLE convention (Premiere/DaVinci/Final Cut): frame-step pauses playback
+    // first — at speed the playhead overruns the seek before the frame can be
+    // read. Route through jklK() (not bare video.pause()) so the JKL shuttle
+    // resets too: J-reverse keeps video.paused === true while its rAF loop
+    // mutates currentTime, and would overwrite the step on the next tick.
+    // Skipped when already paused — a bare step never touches the rate UI.
+    if (!video.paused || (typeof jklState !== 'undefined' && jklState.mode === 'rev')) {
+        if (typeof jklK === 'function') jklK();
+        else { video.pause(); syncPlayButton(false); }
+    }
     const f = frameOf(video.currentTime || 0) + delta;
     const target = Math.max(0, timeOfFrame(f));
     if (isFinite(video.duration)) {
@@ -503,6 +513,9 @@ window.addEventListener('mouseup', () => { scrubDragging = false; });
 
 document.addEventListener('keydown', (e) => {
     if (isEditableTarget(e)) return;
+    // Focused <button> keeps native Space activation for Tab-nav users —
+    // don't preventDefault transport keys over it (same idiom as seg-list rows).
+    if (e.target && typeof e.target.closest === 'function' && e.target.closest('button')) return;
     if (e.key === ' ') { e.preventDefault(); togglePlay(); }
     else if (e.key === ',') { e.preventDefault(); stepFrame(e.shiftKey ? -10 : -1); }
     else if (e.key === '.') { e.preventDefault(); stepFrame(e.shiftKey ? 10 : 1); }
@@ -733,6 +746,8 @@ function setActiveSkill(skillId) {
 
 document.addEventListener('keydown', (e) => {
     if (isEditableTarget(e)) return;
+    // Cmd/Ctrl+digit is browser tab-switching on every major OS — don't hijack.
+    if (e.metaKey || e.ctrlKey) return;
     // Use e.code so Shift+1 doesn't get reported as "!" on US keyboards.
     // e.code for "1" is always "Digit1" regardless of shift state.
     const m = /^Digit([1-9])$/.exec(e.code);
@@ -873,6 +888,11 @@ function renderLanes() {
     // are removed after.
     const touched = new Set();
 
+    // Hoist IoU computation out of the per-segment loop: O(N·M) instead of
+    // O(N²·M) per render. Edge-drag re-renders on every mousemove, so the
+    // per-segment recompute was the hot path under load.
+    const iouByIdForLanes = GOLD_SEGMENTS.length ? computeIouMatches() : null;
+
     state.segments.forEach(seg => {
         touched.add(seg.id);
         const skill = getSkillById(seg.skill_id);
@@ -938,9 +958,9 @@ function renderLanes() {
         // Hover tooltip: skill · range · duration · IoU (when gold is loaded)
         const titleEl = rect.querySelector('title');
         if (titleEl) {
-            const iouStr = GOLD_SEGMENTS.length
+            const iouStr = iouByIdForLanes
                 ? (() => {
-                    const m = computeIouMatches().get(seg.id);
+                    const m = iouByIdForLanes.get(seg.id);
                     return m && m.gold ? ` · IoU ${m.iou.toFixed(2)} vs gold` : '';
                   })()
                 : '';
@@ -2007,6 +2027,13 @@ async function saveAll({ auto = false } = {}) {
         if (!auto) showToast('保存中…请稍候 Save already running', 'info');
         return;
     }
+    // Don't persist while a segment is mid-creation (S/I pressed, no O/S yet).
+    // Auto-save already defers via scheduleAutoSave; manual must mirror that
+    // or the in-progress mark is silently dropped from the saved payload.
+    if (state.pendingStart !== null) {
+        if (!auto) showToast('片段未关闭 — 按 O 或 S 标记结束后再保存', 'info');
+        return;
+    }
     saveInFlight = true;
     // race-guard: snapshot the mutation generation; if it moves before the
     // response lands, a fresh edit raced us and we must NOT clear dirty.
@@ -2142,9 +2169,10 @@ async function loadExisting() {
 }
 
 // ⌘S / Ctrl+S — natural save shortcut. preventDefault stops the browser
-// Save-Page dialog from intercepting.
+// Save-Page dialog from intercepting. Deliberately NOT gated on
+// isEditableTarget: save must work from any focus context (input, button,
+// dropdown) — otherwise ⌘S from a frame-edit input opens the browser dialog.
 document.addEventListener('keydown', (e) => {
-    if (isEditableTarget(e)) return;
     if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         saveAll();
@@ -2292,6 +2320,9 @@ function undo() {
 
 document.addEventListener('keydown', (e) => {
     if (isEditableTarget(e)) return;
+    // Focused <button> keeps native Space/Enter activation for Tab-nav users —
+    // JKL and the edit hotkeys must not steal keys over it (seg-list row idiom).
+    if (e.target && typeof e.target.closest === 'function' && e.target.closest('button')) return;
     // ? toggles overlay. Note: Shift+/ produces "?" on US keyboards.
     if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         e.preventDefault();
