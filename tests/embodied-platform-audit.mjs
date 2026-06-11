@@ -109,7 +109,8 @@ assert.match(backendMain, /app\.mount\(\s*"\/embodied-assets"/, 'host backend mu
 assert.match(backendMain, /app\.mount\(\s*"\/embodied-cache"/, 'host backend must serve materialized episode bundles');
 assert.match(backendPyproject, /"pyarrow>=16"/, 'host backend must declare pyarrow for recorded LeRobot dataset routes');
 assert.doesNotMatch(`${html}\n${js}\n${labelerHtml}\n${labelerJs}\n${labelerConsoleJs}`, /127\.0\.0\.1:8000|127\.0\.0\.1:8001|localhost:8000|localhost:8001/, 'unified platform UI must not call or link to split localhost apps');
-assert.match(labelerHtml, /assets\/embodied\/embodied\.js\?v=27/, 'hosted labeler should include the reviewed v27 temporal JS');
+assert.match(labelerHtml, /assets\/embodied\/embodied\.js\?v=28/, 'hosted labeler should include the reviewed v28 temporal JS');
+assert.match(labelerJs, /armVideoStallFallback[\s\S]{0,2400}createObjectURL/, 'labeler must carry the media-stall blob fallback (Chrome instrumented-profile fix)');
 assert.match(labelerJs, /state\.pendingStart !== null[\s\S]{0,200}片段未关闭/, 'manual save must guard on an open segment (f4c09c9 re-port)');
 assert.match(labelerJs, /e\.metaKey \|\| e\.ctrlKey/, 'digit hotkeys must not hijack Cmd\/Ctrl tab-switching (f4c09c9 re-port)');
 assert.match(labelerJs, /iouByIdForLanes/, 'renderLanes must hoist IoU matching out of the per-segment loop (f4c09c9 re-port)');

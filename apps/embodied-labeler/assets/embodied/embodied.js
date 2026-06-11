@@ -169,6 +169,48 @@ function retryVideoLoad() {
     const source = video.querySelector('source');
     if (source) source.src = videoSourcePath;
     video.load();
+    armVideoStallFallback();
+}
+
+// ----------------------------------------------------------------------------
+// Media-stack stall fallback. Some Chrome profiles (extension-instrumented
+// network stacks) never deliver bytes to the <video> element's own fetch —
+// loadstart fires, then 'stalled' at readyState 0 forever — while fetch() of
+// the same URL succeeds. After VIDEO_STALL_MS without metadata or a real
+// error, refetch the clip ourselves and feed the SAME bytes as a blob URL,
+// bypassing the media-network path. Normal environments never hit this.
+// Clips are short materializer outputs (demo: 160 KB), so a full in-memory
+// blob is acceptable.
+// ----------------------------------------------------------------------------
+const VIDEO_STALL_MS = 2500;
+let blobFallbackUrl = null;   // current object URL (revoked on replacement)
+let blobFallbackFor = null;   // which videoSourcePath the blob was built from
+
+function armVideoStallFallback() {
+    const want = videoSourcePath;
+    setTimeout(async () => {
+        if (video.readyState > 0 || video.error) return;   // loaded or real error
+        if (videoSourcePath !== want) return;              // source swapped meanwhile
+        if (video.currentSrc && video.currentSrc.startsWith('blob:')) return;
+        try {
+            if (blobFallbackFor !== want) {
+                const r = await fetch(want);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                const blob = await r.blob();
+                if (videoSourcePath !== want) return;      // raced a source swap
+                if (blobFallbackUrl) URL.revokeObjectURL(blobFallbackUrl);
+                blobFallbackUrl = URL.createObjectURL(blob);
+                blobFallbackFor = want;
+            }
+            console.warn(`embodied.js: media element stalled — blob fallback for ${videoSourceLabel()}`);
+            video.querySelector('source')?.removeAttribute('src');
+            video.src = blobFallbackUrl;
+            video.load();
+        } catch (e) {
+            // Leave the existing error/retry overlay path in charge.
+            console.error('embodied.js: blob fallback failed:', e);
+        }
+    }, VIDEO_STALL_MS);
 }
 
 // ----------------------------------------------------------------------------
@@ -196,6 +238,7 @@ function applyEpisodeBundle(bundle) {
             `视频文件加载失败（${videoSourceLabel()}）— 缓存可能已失效，请重试。`);
     }
     video.load();
+    armVideoStallFallback();
     // Sprite strip: thumb filmstrip + scrub hover preview share the image.
     // Tile count is measured from the image itself (see measureSpriteTiles).
     const spriteUrl = apiUrl(bundle.sprite_url);
@@ -237,6 +280,9 @@ async function fetchEpisodeBundle() {
 let episodeSourceReady;
 if (IS_DEMO_SOURCE) {
     episodeSourceReady = Promise.resolve(null);
+    // The HTML's <source> kicked off the demo clip load before this module
+    // ran — watch it for the media-stack stall too.
+    armVideoStallFallback();
 } else {
     // Cancel the demo <source> the HTML kicked off before this module ran.
     // Without this, a failed bundle fetch leaves the demo clip loading — the
