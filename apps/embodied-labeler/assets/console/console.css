@@ -44,12 +44,71 @@
     display: grid;
     height: 100vh;
     grid-template-areas:
+        "topbar topbar topbar"
         "tree viewport inspector"
         "conductor conductor conductor"
         "bottombar bottombar bottombar";
     grid-template-columns: 236px minmax(0, 1fr) 320px;
-    grid-template-rows: minmax(0, 1fr) minmax(0, 40vh) 42px;
+    grid-template-rows: 36px minmax(0, 1fr) minmax(0, 40vh) 42px;
 }
+
+/* ---- topbar — wordmark + shared 运营台|标注台 app switcher (spec §7) ---- */
+.console-topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--ds-line);
+}
+
+.topbar-brand {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ds-ink-soft);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color var(--motion-fast) var(--ease);
+}
+
+.topbar-brand:hover { color: var(--ds-ink); }
+
+/* same construction as the platform header switcher, on the chassis tokens;
+   26px tall so the control breathes inside the 36px bar */
+.app-switcher {
+    display: inline-flex;
+    align-items: stretch;
+    height: 26px;
+    border: 1px solid var(--ds-line-strong);
+    border-radius: var(--r-2);
+    overflow: hidden;
+}
+
+.app-switcher > a,
+.app-switcher > span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 13px;
+    color: var(--ds-ink-soft);
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background-color var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+
+.app-switcher > * + * { border-left: 1px solid var(--ds-line); }
+
+.app-switcher [aria-current="page"] {
+    background: var(--ds-surface-sunk);
+    color: var(--ds-ink);
+}
+
+.app-switcher a:hover { color: var(--ds-ink); }
+
+/* the global .console a:focus-visible ring would be clipped by overflow:hidden */
+.console .app-switcher a:focus-visible { outline-offset: -2px; }
 
 .console-tree      { grid-area: tree; border-right: 1px solid var(--ds-line); overflow-y: auto; min-height: 0; }
 .console-viewport  { grid-area: viewport; overflow-y: auto; min-height: 0; }

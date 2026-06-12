@@ -259,12 +259,12 @@ assert.match(sw, new RegExp(`embodied-platform\\.js\\?v=${jsVersion}`), 'service
 for (const token of ['--bg:', '--surface:', '--surface-2:', '--hairline:', '--ink:', '--brand:', '--brand-lum:', '--accent:', '--st-info:', '--st-ok:', '--st-warn:', '--st-danger:']) {
   assert.match(css, new RegExp(token.replace(/[-]/g, '\\$&')), `design token ${token} should be defined in CSS :root`);
 }
-assert.match(css, /--bg:\s*#f7faf9/, 'app background should be the teal-tint paper surface');
-assert.match(css, /--surface:\s*#ffffff/, 'panels should be white cards in the light theme');
-assert.match(css, /--ink:\s*#16201f/, 'primary text should be the deep teal-black ink');
-assert.match(css, /--brand:\s*#0d4f4a/, 'brand should be the XINGJU deep teal');
-assert.match(css, /--brand-lum:\s*#1f7a6b/, 'luminous teal accent should be defined');
-assert.match(css, /--st-ok:\s*#1f7a6b/, 'ok/active status should be green-teal (semantic fix — ok is not blue)');
+assert.match(css, /--bg:\s*#141619/, 'app background should be the dark instrument ground (spec §7 one-ground amendment)');
+assert.match(css, /--surface:\s*#1a1d20/, 'panels should sit on the raised dark surface');
+assert.match(css, /--ink:\s*#e8ecef/, 'primary text should be the dark-ground ink');
+assert.match(css, /--brand:\s*#1f7a6b/, 'brand fills on dark should be the luminous teal (white ink)');
+assert.match(css, /--brand-lum:\s*#5ec8c0/, 'focus rings/links should use the historical dark-scope brand teal');
+assert.match(css, /--st-ok:\s*#7ec98f/, 'ok/active status should be the dark-ground green (semantic fix — ok is not blue)');
 assert.match(css, /--accent:\s*#ff5a36/, 'signal coral accent should be defined (active rail + wordmark tick only)');
 assert.doesNotMatch(css, /#1e40af|#2563eb|#0ea5e9|#d97706|#dc2626|rgba\(37,\s*99,\s*235/i, 'no Azure blue / old status literals should remain');
 assert.doesNotMatch(css, /#059669|rgba\(5,\s*150,\s*105/i, 'no Tailwind emerald literals should remain (ok is the teal #1f7a6b)');
@@ -331,10 +331,16 @@ assert.match(js, /renderPrincipal/, 'header should reflect the signed-in princip
 assert.match(js, /\.module-panel input, \.module-panel select/, 'write-form locking must be scoped to module panels so login stays usable');
 assert.doesNotMatch(js, /querySelectorAll\('input, select'\)/, 'form-locking must not blanket-disable every input/select (would deadlock login)');
 
-// PWA light theming (spec §4) — XINGJU teal + white.
-assert.match(html, /<meta name="theme-color" content="#ffffff">/, 'theme-color meta should be the light white surface');
-assert.match(manifest, /"theme_color":\s*"#ffffff"/, 'manifest theme_color should be light');
-assert.match(manifest, /"background_color":\s*"#f7faf9"/, 'manifest background_color should be the teal-tint paper surface');
+// PWA theming (spec §7 amendment) — one dark instrument ground.
+assert.match(html, /<meta name="theme-color" content="#141619">/, 'theme-color meta should be the dark instrument ground');
+assert.match(manifest, /"theme_color":\s*"#141619"/, 'manifest theme_color should be the dark instrument ground');
+assert.match(manifest, /"background_color":\s*"#141619"/, 'manifest background_color should be the dark instrument ground');
+// §7 amendment — shared app switcher (connective tissue between the surfaces).
+assert.match(html, /class="app-switcher"/, 'platform header should carry the shared 运营台|标注台 app switcher');
+assert.match(labelerHtml, /class="app-switcher"/, 'labeler topbar should carry the shared 运营台|标注台 app switcher');
+assert.match(html, /href="\/labeler\//, 'platform switcher should deep-link to the hosted labeler');
+assert.match(labelerHtml, /href="\/app\/"/, 'labeler switcher should link back to the operations console');
+
 assert.match(icon, /#ffffff/, 'PWA icon should adopt the white light surface');
 assert.match(icon, /#0d4f4a/, 'PWA icon should carry the XINGJU deep teal brand');
 assert.doesNotMatch(icon, /#1e40af|#2563eb/, 'PWA icon should drop the Azure blue fills');

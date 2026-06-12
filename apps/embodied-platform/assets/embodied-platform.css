@@ -11,33 +11,36 @@
 [hidden] { display: none !important; }
 
 :root {
-  /* surfaces & elevation */
-  --bg: #f7faf9;
-  --surface: #ffffff;
-  --surface-2: #f6f7f7;
-  --surface-3: #eef2f1;
-  /* edges — hairline-first elevation (spec §2); --hairline* kept as aliases */
-  --edge: rgba(13, 79, 74, 0.14);
-  --edge-strong: rgba(13, 79, 74, 0.26);
+  /* surfaces & elevation — ONE dark instrument ground (spec §7 amendment);
+     values are the labeler chassis canon */
+  --bg: #141619;
+  --surface: #1a1d20;
+  --surface-2: #16191c;
+  --surface-3: #101214;
+  /* edges — hairline-first elevation (spec §2, dark-ground values);
+     --hairline* kept as aliases */
+  --edge: #26292e;
+  --edge-strong: #343a40;
   --hairline: var(--edge);
   --hairline-strong: var(--edge-strong);
   --overlay-shadow: 0 12px 32px rgba(22, 32, 31, 0.16); /* floating layers ONLY */
   /* ink */
-  --ink: #16201f;
-  --ink-muted: #5e6e6b;
-  --ink-faint: #8a9996;
-  /* brand */
-  --brand: #0d4f4a;
-  --brand-lum: #1f7a6b;
+  --ink: #e8ecef;
+  --ink-muted: #9aa3ab;
+  --ink-faint: #6a7178;
+  /* brand on dark: fills stay the luminous teal (white ink);
+     --brand-lum carries focus rings / links / luminous accents */
+  --brand: #1f7a6b;
+  --brand-lum: #5ec8c0;
   /* signal coral, sparingly (active rail indicator, wordmark tick);
      never for status */
   --accent: #ff5a36;
-  /* semantic status telemetry palette */
-  --st-neutral: #64748b;
-  --st-info: #0d6e8a;
-  --st-ok: #1f7a6b;
-  --st-warn: #b56b00;
-  --st-danger: #d92d20;
+  /* semantic status telemetry palette — §7 dark values */
+  --st-neutral: #8a94a3;
+  --st-info: #6fb3c9;
+  --st-ok: #7ec98f;
+  --st-warn: #d9a05f;
+  --st-danger: #e8746a;
   /* type stacks */
   --font-ui: "IBM Plex Sans SC", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
@@ -60,11 +63,12 @@ body {
   margin: 0;
   min-height: 100vh;
   background-color: var(--bg);
-  /* subtle atmosphere: hairline grid + fine scanline grain — no radial gradients */
+  /* subtle atmosphere: hairline grid + fine scanline grain — re-derived for the
+     dark ground (faint ink-on-dark, like the labeler chassis); no radial gradients */
   background-image:
-    repeating-linear-gradient(0deg, rgba(13, 79, 74, 0.02) 0, rgba(13, 79, 74, 0.02) 1px, transparent 1px, transparent 3px),
-    repeating-linear-gradient(90deg, rgba(13, 79, 74, 0.03) 0, rgba(13, 79, 74, 0.03) 1px, transparent 1px, transparent 64px),
-    repeating-linear-gradient(0deg, rgba(13, 79, 74, 0.03) 0, rgba(13, 79, 74, 0.03) 1px, transparent 1px, transparent 64px);
+    repeating-linear-gradient(0deg, rgba(232, 236, 239, 0.012) 0, rgba(232, 236, 239, 0.012) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(90deg, rgba(232, 236, 239, 0.02) 0, rgba(232, 236, 239, 0.02) 1px, transparent 1px, transparent 64px),
+    repeating-linear-gradient(0deg, rgba(232, 236, 239, 0.02) 0, rgba(232, 236, 239, 0.02) 1px, transparent 1px, transparent 64px);
   color: var(--ink);
   font-family: var(--font-ui);
   font-weight: 400;
@@ -110,8 +114,9 @@ button,
     color var(--motion-fast) var(--ease);
 }
 
+/* hover = ground-tint shift; on the dark ground that means brighten, not sink */
 button:hover {
-  background: var(--surface-3);
+  background: color-mix(in srgb, #ffffff 7%, var(--surface-2));
 }
 
 button:active:not(:disabled),
@@ -127,9 +132,11 @@ a[class^="btn-"]:active {
   color: #ffffff;
 }
 
+/* hover lightens the fill in place — --brand-lum (#5ec8c0) is too pale to
+   carry white ink on the dark ground */
 .btn-primary:hover {
-  background: var(--brand-lum);
-  border-color: var(--brand-lum);
+  background: color-mix(in srgb, var(--brand) 86%, #ffffff);
+  border-color: color-mix(in srgb, var(--brand) 86%, #ffffff);
   color: #ffffff;
 }
 
@@ -141,22 +148,25 @@ a[class^="btn-"]:active {
 }
 
 .btn-secondary:hover {
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.06);
   border-color: var(--edge-strong);
   color: var(--ink);
 }
 
-/* Danger — filled --st-danger (destructive: 重置演示数据) */
+/* Danger — filled --st-danger (destructive: 重置演示数据).
+   The dark-ground danger (#e8746a) is a pale fill: white ink fails contrast
+   (≈2.9:1), so it takes dark ink (≈6.3:1) — same law as the labeler's
+   --ds-ink-on-brand for pale fills. */
 .btn-danger {
   background: var(--st-danger);
   border-color: var(--st-danger);
-  color: #ffffff;
+  color: #101214;
 }
 
 .btn-danger:hover {
   background: color-mix(in srgb, var(--st-danger) 90%, var(--ink));
   border-color: color-mix(in srgb, var(--st-danger) 90%, var(--ink));
-  color: #ffffff;
+  color: #101214;
 }
 
 /* Ghost — borderless, tint on hover (icon / rail-adjacent buttons) */
@@ -167,7 +177,7 @@ a[class^="btn-"]:active {
 }
 
 .btn-ghost:hover {
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.06);
   border-color: transparent;
   color: var(--ink);
 }
@@ -248,6 +258,55 @@ select:disabled {
   color: var(--accent);
 }
 
+/* ---------------------------------------------------------------------------
+   App switcher — 运营台 | 标注台 (spec §7: one construction on both surfaces)
+   --------------------------------------------------------------------------- */
+.app-switcher {
+  flex: none;
+  display: inline-flex;
+  align-items: stretch;
+  height: 36px;
+  margin-left: 0.4rem;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-2);
+  overflow: hidden;
+}
+
+.app-switcher > a,
+.app-switcher > span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    background-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
+}
+
+.app-switcher > * + * {
+  border-left: 1px solid var(--edge);
+}
+
+.app-switcher [aria-current="page"] {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.app-switcher a:hover {
+  color: var(--ink);
+}
+
+/* ring sits inset — the container's overflow:hidden would clip an offset ring */
+.app-switcher a:focus-visible {
+  outline: 2px solid var(--brand-lum);
+  outline-offset: -2px;
+}
+
 .eyebrow {
   margin: 0 0 0.18rem;
   color: var(--brand-lum);
@@ -296,7 +355,7 @@ select:disabled {
 
 .status-pill.live {
   color: var(--st-ok);
-  border-color: rgba(31, 122, 107, 0.35);
+  border-color: color-mix(in srgb, var(--st-ok) 40%, transparent);
 }
 
 .status-pill.live::before {
@@ -306,7 +365,7 @@ select:disabled {
 
 .status-pill.offline {
   color: var(--st-warn);
-  border-color: rgba(181, 107, 0, 0.32);
+  border-color: color-mix(in srgb, var(--st-warn) 40%, transparent);
 }
 
 .status-pill.offline::before {
@@ -522,7 +581,7 @@ select:disabled {
 }
 
 .module-rail button:hover {
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.05);
   border-color: transparent;
   color: var(--ink);
 }
@@ -531,14 +590,16 @@ select:disabled {
   color: var(--ink-muted);
 }
 
+/* active rail item: brand tint re-derived against the dark surface; label/icon
+   take --brand-lum — the brand fill teal only reaches ≈3.3:1 as text on dark */
 .module-rail button.active {
-  background: rgba(13, 79, 74, 0.08);
+  background: color-mix(in srgb, var(--brand) 16%, var(--surface));
   border-color: var(--edge);
-  color: var(--brand);
+  color: var(--brand-lum);
 }
 
 .module-rail button.active .rail-icon {
-  color: var(--brand);
+  color: var(--brand-lum);
 }
 
 .module-rail button.active::before {
@@ -711,7 +772,7 @@ select {
 
 [aria-invalid="true"] {
   border-color: var(--st-danger);
-  background: rgba(217, 45, 32, 0.08);
+  background: color-mix(in srgb, var(--st-danger) 12%, var(--surface-2));
 }
 
 /* ---------------------------------------------------------------------------
@@ -800,7 +861,7 @@ select {
 }
 
 .row:not(.header):not(.empty):hover {
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .row.header {
@@ -860,34 +921,36 @@ select {
   opacity: 0.95;
 }
 
+/* tag tints re-derived for the dark ground: color-mix against the dark surface
+   instead of the light-era rgba literals */
 .tag--neutral {
   color: var(--st-neutral);
-  border-color: rgba(100, 116, 139, 0.32);
-  background: rgba(100, 116, 139, 0.1);
+  border-color: color-mix(in srgb, var(--st-neutral) 35%, transparent);
+  background: color-mix(in srgb, var(--st-neutral) 12%, var(--surface));
 }
 
 .tag--info {
   color: var(--st-info);
-  border-color: rgba(13, 110, 138, 0.32);
-  background: rgba(13, 110, 138, 0.1);
+  border-color: color-mix(in srgb, var(--st-info) 35%, transparent);
+  background: color-mix(in srgb, var(--st-info) 12%, var(--surface));
 }
 
 .tag--ok {
   color: var(--st-ok);
-  border-color: rgba(31, 122, 107, 0.34);
-  background: rgba(31, 122, 107, 0.1);
+  border-color: color-mix(in srgb, var(--st-ok) 35%, transparent);
+  background: color-mix(in srgb, var(--st-ok) 12%, var(--surface));
 }
 
 .tag--warn {
   color: var(--st-warn);
-  border-color: rgba(181, 107, 0, 0.32);
-  background: rgba(181, 107, 0, 0.1);
+  border-color: color-mix(in srgb, var(--st-warn) 35%, transparent);
+  background: color-mix(in srgb, var(--st-warn) 12%, var(--surface));
 }
 
 .tag--danger {
   color: var(--st-danger);
-  border-color: rgba(217, 45, 32, 0.34);
-  background: rgba(217, 45, 32, 0.1);
+  border-color: color-mix(in srgb, var(--st-danger) 35%, transparent);
+  background: color-mix(in srgb, var(--st-danger) 12%, var(--surface));
 }
 
 .tag--faint {
