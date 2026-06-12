@@ -84,7 +84,13 @@ def match_segments(
                 row.append(temporal_iou((a.start_frame, a.end_frame), (g.start_frame, g.end_frame)))
         weights.append(row)
 
-    if len(gold) <= 22 and len(annotator) <= ANNOTATOR_SEGMENTS_CAP:
+    # The exact DP recurses once per annotator segment; its safe depth depends on
+    # the AMBIENT stack already consumed (pytest, server frames), so gate it well
+    # below Python's 1000 default rather than at the truncation cap — a transient
+    # RecursionError was observed at 512 under a deep call context. Beyond the
+    # gate, the iterative greedy matcher below handles it (stack-free).
+    DP_RECURSION_GATE = 256
+    if len(gold) <= 22 and len(annotator) <= DP_RECURSION_GATE:
         @lru_cache(maxsize=None)
         def solve(i: int, used_gold_mask: int) -> tuple[float, tuple[tuple[int, int, float], ...]]:
             if i >= len(annotator):
