@@ -158,3 +158,28 @@ def test_event_ingest_rejects_unknown_discriminators(tmp_path, monkeypatch):
 
     response = client.post("/v1/events/label", json=bad)
     assert response.status_code == 422, response.text
+
+
+def test_event_payload_with_nul_byte_is_422_not_500(tmp_path, monkeypatch):
+    """U+0000 cannot exist in PostgreSQL jsonb (the PG backend would 500 inside
+    psycopg) and the retired Postgres ingest rejected it too — the EventModel
+    boundary must turn it into the same clean 422 on every backend, with
+    nothing persisted."""
+    client = _client(tmp_path, monkeypatch)
+    from api.embodied_platform.repository import get_repository
+
+    event = {
+        "event_id": str(uuid4()),
+        "session_id": str(uuid4()),
+        "annotator_id": str(uuid4()),
+        "ts_client": _now(),
+        "payload": {
+            "event_type": "hotkey.used",
+            "key": "s\x00",
+            "action": "mark_start",
+        },
+    }
+    response = client.post("/v1/events/telemetry", json={"events": [event]})
+    assert response.status_code == 422, response.text
+    assert "NUL" in response.text
+    assert get_repository().read()["telemetry_events"] == []

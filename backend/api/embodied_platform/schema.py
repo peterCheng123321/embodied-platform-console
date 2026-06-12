@@ -59,6 +59,18 @@ class StrictModel(BaseModel):
 class EventModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    @field_validator("*", mode="after")
+    @classmethod
+    def _reject_nul(cls, value):
+        # Same boundary rule as StrictModel but WITHOUT the whitespace strip —
+        # event payload bytes are preserved verbatim for the /v1/events compat
+        # contract. PostgreSQL cannot represent U+0000 (the PG backend would
+        # 500), and the retired Postgres ingest rejected it too: a clean 422
+        # at validation keeps both backends identical.
+        if isinstance(value, str) and "\x00" in value:
+            raise ValueError("string fields must not contain NUL (\\x00) bytes")
+        return value
+
 
 class DatasetCreate(StrictModel):
     name: str = Field(min_length=1, max_length=120)
