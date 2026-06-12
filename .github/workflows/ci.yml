@@ -1,0 +1,47 @@
+name: ci
+on:
+  push: {branches: [main, 'codex/**']}
+  pull_request:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.13'}
+      - run: pip install -e 'backend[dev]'
+      - run: cd backend && python -m pytest tests -q -rs
+  static-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: node tests/embodied-platform-audit.mjs
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t embodied-platform-console:ci .
+  # Authoritative Postgres verification: the local dev machine has no PG/Docker,
+  # so PgRepository tests skip there and MUST pass here. This job also runs the
+  # ENTIRE suite against PgRepository (DSN set) — both backends must agree.
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_PASSWORD: ci, POSTGRES_DB: xingju_ci}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      XINGJU_TEST_PG_DSN: postgresql://postgres:ci@localhost:5432/xingju_ci
+      XINGJU_EMBODIED_PLATFORM_DSN: postgresql://postgres:ci@localhost:5432/xingju_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.13'}
+      - run: pip install -e 'backend[dev]'
+      - run: cd backend && python -m pytest tests -q -rs
