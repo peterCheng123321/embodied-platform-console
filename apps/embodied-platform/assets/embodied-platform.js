@@ -87,10 +87,18 @@ const ACTION_ROLES = {
   'create-dataset': ['admin', 'data_manager', 'operator'],
   'create-episode': ['admin', 'data_manager', 'operator'],
   'start-import': ['admin', 'data_manager', 'operator'],
+  'cancel-import': ['admin', 'data_manager', 'operator'],
+  'retry-import': ['admin', 'data_manager', 'operator'],
   'save-annotation': ['admin', 'annotator', 'reviewer', 'operator'],
+  'submit-annotation-review': ['admin', 'annotator', 'reviewer', 'operator'],
+  'accept-annotation': ['admin', 'annotator', 'reviewer', 'operator'],
+  'rework-annotation': ['admin', 'annotator', 'reviewer', 'operator'],
+  'resubmit-annotation': ['admin', 'annotator', 'reviewer', 'operator'],
   'create-collection-run': ['admin', 'data_manager', 'annotator', 'reviewer', 'operator'],
   'register-collection-attempt': ['admin', 'annotator', 'reviewer', 'operator'],
   'review-collection-attempt': ['admin', 'reviewer', 'operator'],
+  'complete-collection-run': ['admin', 'annotator', 'reviewer', 'operator'],
+  'fail-collection-run': ['admin', 'annotator', 'reviewer', 'operator'],
   'start-training': ['admin', 'ml_engineer', 'operator'],
   'activate-model': ['admin', 'ml_engineer', 'operator'],
   'start-simulation': ['admin', 'ml_engineer', 'operator'],
@@ -100,10 +108,34 @@ const ACTION_ROLES = {
   'save-settings': ['admin'],
 };
 
+// Client-side mirrors of the backend lifecycle transition tables (routes.py).
+// They gate the lifecycle buttons on the referenced record's current status and
+// enforce the same table on offline-demo writes. The server stays the
+// authority — a stale click still gets a clean 409 on the status strip.
+const COLLECTION_RUN_TERMINABLE = new Set(['collecting', 'ready_for_review', 'blocked']);
+const COLLECTION_RUN_MANUAL_TERMINAL = new Set(['completed', 'failed']);
+const IMPORT_CANCELLABLE = new Set(['queued', 'running']);
+const IMPORT_RETRYABLE = new Set(['failed', 'cancelled']);
+const ANNOTATION_STATUS_FLOW = {
+  open: ['review'],
+  review: ['accepted', 'rework'],
+  rework: ['review'],
+  accepted: [],
+};
+// Which button drives which transition; `from` keeps the four buttons
+// semantically distinct (提交复核 is open→review only, 重新提交 rework→review).
+const ANNOTATION_ACTION_GATES = {
+  'submit-annotation-review': { from: ['open'], to: 'review' },
+  'accept-annotation': { from: ['review'], to: 'accepted' },
+  'rework-annotation': { from: ['review'], to: 'rework' },
+  'resubmit-annotation': { from: ['rework'], to: 'review' },
+};
+
 const LABELS = {
   queued: '排队中',
   running: '运行中',
   succeeded: '已完成',
+  completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
   review: '待复核',
@@ -351,6 +383,38 @@ function writeBlockReason(action = null) {
 // double submit.
 const inFlightActionButtons = new Set();
 
+// Lifecycle buttons act on the record their module's id field references; gate
+// them on that record's current status so only transitions the backend tables
+// accept stay clickable. Returns a human reason ('' when the action is allowed
+// or is not a lifecycle action).
+function lifecycleBlockReason(action) {
+  if (!state.data) return '';
+  if (action === 'complete-collection-run' || action === 'fail-collection-run') {
+    const run = selectedCollectionRun(state.data);
+    if (!run) return '未选择试采批次';
+    if (!COLLECTION_RUN_TERMINABLE.has(run.status)) return `批次已处于终态：${LABELS[run.status] || run.status}`;
+    return '';
+  }
+  if (action === 'cancel-import' || action === 'retry-import') {
+    const job = selectedImportJob();
+    if (!job) return '未选择导入任务';
+    const allowed = action === 'cancel-import' ? IMPORT_CANCELLABLE : IMPORT_RETRYABLE;
+    if (!allowed.has(job.status)) {
+      return `导入任务当前状态 ${LABELS[job.status] || job.status}，不能${action === 'cancel-import' ? '取消' : '重试'}`;
+    }
+    return '';
+  }
+  const gate = ANNOTATION_ACTION_GATES[action];
+  if (gate) {
+    const task = selectedAnnotationTask();
+    if (!task) return '未选择标注任务';
+    const current = task.status || 'open';
+    if (!gate.from.includes(current)) return `标注任务当前状态 ${LABELS[current] || current}，不能执行该操作`;
+    return '';
+  }
+  return '';
+}
+
 function syncWriteControls() {
   document.querySelectorAll('[data-action]').forEach((button) => {
     const action = button.dataset.action;
@@ -358,8 +422,10 @@ function syncWriteControls() {
     if (NON_WRITE_ACTIONS.has(button.dataset.action)) {
       button.disabled = !state.ready && button.dataset.action !== 'refresh-monitoring';
     }
+    const lifecycleReason = button.disabled ? '' : lifecycleBlockReason(action);
+    if (lifecycleReason) button.disabled = true;
     if (inFlightActionButtons.has(button)) button.disabled = true;
-    button.title = button.disabled ? (writeBlockReason(action) || '平台数据仍在加载') : '';
+    button.title = button.disabled ? (writeBlockReason(action) || lifecycleReason || '平台数据仍在加载') : '';
     button.setAttribute('aria-disabled', String(button.disabled));
   });
 
@@ -786,6 +852,7 @@ const STATUS_TOKENS = {
   ready_for_review: 'warn',
   running: 'info',
   succeeded: 'ok',
+  completed: 'ok',
   accepted: 'ok',
   active: 'ok',
   passed: 'ok',
@@ -1024,6 +1091,20 @@ function selectedCollectionRun(data) {
   return runs.at(-1) || null;
 }
 
+function selectedImportJob() {
+  const jobs = state.data?.imports || [];
+  const jobId = document.getElementById('import-job-id')?.value.trim();
+  if (jobId) return jobs.find((job) => job.id === jobId) || null;
+  return jobs.at(-1) || null;
+}
+
+function selectedAnnotationTask() {
+  const tasks = state.data?.annotation_tasks || [];
+  const taskId = document.getElementById('annotation-task-id')?.value.trim();
+  if (taskId) return tasks.find((task) => task.id === taskId) || null;
+  return tasks.at(-1) || null;
+}
+
 function renderCollection(data) {
   const summary = document.getElementById('collection-summary');
   const matrix = document.getElementById('collection-task-matrix');
@@ -1041,9 +1122,14 @@ function renderCollection(data) {
   const reviewInput = document.getElementById('collection-review-attempt');
   if (latestAttempt && reviewInput && !reviewInput.value.trim()) reviewInput.value = latestAttempt.id;
 
+  // A manually terminated run keeps its terminal status; the derived progress
+  // status would misreport it as still collecting.
+  const runStatus = run && COLLECTION_RUN_MANUAL_TERMINAL.has(run.status)
+    ? run.status
+    : (progress ? progress.status : 'collecting');
   const summaryItems = [
     { label: '批次', content: run?.id || '未创建' },
-    { label: '状态', content: progress ? tag(progress.status).value : tag('collecting').value, trusted: true },
+    { label: '状态', content: tag(runStatus).value, trusted: true },
     { label: '已达标任务', content: `${progress?.ready_task_count ?? 0}/${profile.task_count_required}` },
     { label: '已通过任务', content: `${progress?.completed_task_count ?? 0}/${profile.task_count_required}` },
     { label: '阻塞任务', content: String(progress?.blocked_task_count ?? 0) },
@@ -1085,6 +1171,15 @@ function renderCollection(data) {
       review,
     ];
   }));
+}
+
+function renderAnnotationTaskStatus() {
+  const node = document.getElementById('annotation-task-status');
+  if (!node) return;
+  const task = state.data ? selectedAnnotationTask() : null;
+  node.innerHTML = task
+    ? `当前任务 ${escapeHtml(task.id)} ${tag(task.status).value}`
+    : '暂无标注任务';
 }
 
 // index.html ships the offline fixtures' identifiers as reference-field defaults;
@@ -1144,13 +1239,29 @@ function renderAll() {
     item.robot_cell || '',
     String(item.frame_count ?? 0),
   ]));
+  table('imports-list', ['任务 ID', '来源', '状态', '信息'], data.imports.map((item) => [
+    item.id,
+    item.source_uri,
+    tag(item.status),
+    item.message || '',
+  ]));
+  const latestImport = data.imports.at(-1);
+  const importInput = document.getElementById('import-job-id');
+  if (latestImport && importInput && !importInput.value.trim()) importInput.value = latestImport.id;
   renderCollection(data);
-  table('annotation-list', ['片段', '任务', '负责人', '状态'], data.annotation_tasks.map((item) => [
+  table('annotation-list', ['任务 ID', '片段', '任务', '负责人', '状态'], data.annotation_tasks.map((item) => [
+    item.id,
     item.episode_id,
     LABELS[item.task_type] || item.task_type,
     item.assignee,
     tag(item.status),
   ]));
+  const latestAnnotationTask = data.annotation_tasks.at(-1);
+  const annotationTaskInput = document.getElementById('annotation-task-id');
+  if (latestAnnotationTask && annotationTaskInput && !annotationTaskInput.value.trim()) {
+    annotationTaskInput.value = latestAnnotationTask.id;
+  }
+  renderAnnotationTaskStatus();
   table('training-list', ['名称', '基础模型', '优化方式', '状态'], data.training_jobs.map((item) => [
     item.name,
     item.base_model,
@@ -1282,6 +1393,27 @@ function requireCollectionRun(runId) {
   return run;
 }
 
+// Offline mirror of the backend _require_run_not_terminated guard: attempt and
+// review writes on a manually terminated run would recompute the run status
+// from progress and silently resurrect it.
+function requireRunNotTerminated(run, fieldId) {
+  if (COLLECTION_RUN_MANUAL_TERMINAL.has(run.status)) {
+    throw new FieldValidationError(fieldId, `批次已结束（${LABELS[run.status] || run.status}），不能再登记或复核`);
+  }
+}
+
+function requireImportJob(jobId) {
+  const job = state.data.imports.find((item) => item.id === jobId);
+  if (!job) throw new FieldValidationError('import-job-id', `未找到导入任务：${jobId}`);
+  return job;
+}
+
+function requireAnnotationTask(taskId) {
+  const task = state.data.annotation_tasks.find((item) => item.id === taskId);
+  if (!task) throw new FieldValidationError('annotation-task-id', `未找到标注任务：${taskId}`);
+  return task;
+}
+
 function requireCollectionTask(profile, taskId) {
   const task = profile.tasks.find((item) => item.task_id === taskId);
   if (!task) throw new FieldValidationError('collection-task', `未找到试采任务：${taskId}`);
@@ -1410,6 +1542,34 @@ async function runAction(action) {
         }
         break;
       }
+      case 'cancel-import':
+      case 'retry-import': {
+        const cancelling = action === 'cancel-import';
+        const targetStatus = cancelling ? 'cancelled' : 'queued';
+        const jobId = textInput('import-job-id', '导入任务 ID');
+        assertOfflineReference(liveWrite, () => {
+          const job = requireImportJob(jobId);
+          const allowed = cancelling ? IMPORT_CANCELLABLE : IMPORT_RETRYABLE;
+          if (!allowed.has(job.status)) {
+            throw new FieldValidationError(
+              'import-job-id',
+              `导入任务状态 ${LABELS[job.status] || job.status} 不能${cancelling ? '取消' : '重试'}`,
+            );
+          }
+        });
+        if (liveWrite) {
+          await commitLiveWrite(() => apiWrite(`${API.imports}/${jobId}/status`, { status: targetStatus }, 'PATCH'));
+        } else {
+          const job = requireImportJob(jobId);
+          job.status = targetStatus;
+          job.message = null;
+          job.updated_at = new Date().toISOString();
+          appendLocalAudit('import.status', jobId, targetStatus);
+          persistDemoState();
+          renderAll();
+        }
+        break;
+      }
       case 'save-annotation': {
         const datasetId = textInput('annotation-dataset', '标注数据集');
         const episodeId = textInput('annotation-episode', '标注片段');
@@ -1426,10 +1586,41 @@ async function runAction(action) {
         };
         assertOfflineReference(liveWrite, () => requireEpisodeInDataset(datasetId, episodeId));
         if (liveWrite) {
-          await commitLiveWrite(() => apiWrite(API.annotation, payload));
+          const created = await apiWrite(API.annotation, payload);
+          document.getElementById('annotation-task-id').value = created.id;
+          await refreshState({ preserveLiveOnFailure: true });
         } else {
           const result = { id: `ann-${Date.now()}`, label_count: payload.labels.length, updated_at: new Date().toISOString(), ...payload };
+          document.getElementById('annotation-task-id').value = result.id;
           useLocalWithAudit('annotation_tasks', result, 'annotation.save', result.id, result.episode_id);
+        }
+        break;
+      }
+      case 'submit-annotation-review':
+      case 'accept-annotation':
+      case 'rework-annotation':
+      case 'resubmit-annotation': {
+        const targetStatus = ANNOTATION_ACTION_GATES[action].to;
+        const taskId = textInput('annotation-task-id', '标注任务 ID');
+        assertOfflineReference(liveWrite, () => {
+          const task = requireAnnotationTask(taskId);
+          const current = task.status || 'open';
+          if (!(ANNOTATION_STATUS_FLOW[current] || []).includes(targetStatus)) {
+            throw new FieldValidationError(
+              'annotation-task-id',
+              `标注任务不能从 ${LABELS[current] || current} 转换到 ${LABELS[targetStatus] || targetStatus}`,
+            );
+          }
+        });
+        if (liveWrite) {
+          await commitLiveWrite(() => apiWrite(`${API.annotation}/${taskId}/status`, { status: targetStatus }, 'PATCH'));
+        } else {
+          const task = requireAnnotationTask(taskId);
+          task.status = targetStatus;
+          task.updated_at = new Date().toISOString();
+          appendLocalAudit('annotation.status', taskId, targetStatus);
+          persistDemoState();
+          renderAll();
         }
         break;
       }
@@ -1471,6 +1662,7 @@ async function runAction(action) {
         if (transcript) payload.transcript = transcript;
         assertOfflineReference(liveWrite, () => {
           const run = requireCollectionRun(runId);
+          requireRunNotTerminated(run, 'collection-run-id');
           const task = requireCollectionTask(firstPersonProfile(run.profile_id), taskId);
           requireNewCollectionAttempt(runId, taskId, attemptIndex, task.max_attempts);
         });
@@ -1513,6 +1705,7 @@ async function runAction(action) {
         };
         assertOfflineReference(liveWrite, () => {
           const attempt = requireCollectionAttempt(attemptId);
+          requireRunNotTerminated(requireCollectionRun(attempt.run_id), 'collection-review-attempt');
           requireKnownIssueCodes(firstPersonProfile(attempt.profile_id), issueCodes);
         });
         if (liveWrite) {
@@ -1529,6 +1722,36 @@ async function runAction(action) {
           const run = requireCollectionRun(attempt.run_id);
           syncCollectionRunStatus(run);
           appendLocalAudit('collection.review', attempt.id, payload.decision);
+          persistDemoState();
+          renderAll();
+        }
+        break;
+      }
+      case 'complete-collection-run':
+      case 'fail-collection-run': {
+        const targetStatus = action === 'complete-collection-run' ? 'completed' : 'failed';
+        const runId = textInput('collection-run-id', '试采批次');
+        const reason = document.getElementById('collection-finish-reason')?.value.trim() || '';
+        if (reason.length > 500) {
+          throw new FieldValidationError('collection-finish-reason', '结束原因不能超过 500 个字符');
+        }
+        const payload = reason ? { status: targetStatus, reason } : { status: targetStatus };
+        assertOfflineReference(liveWrite, () => {
+          const run = requireCollectionRun(runId);
+          if (!COLLECTION_RUN_TERMINABLE.has(run.status)) {
+            throw new FieldValidationError(
+              'collection-run-id',
+              `批次不能从 ${LABELS[run.status] || run.status} 转换到 ${LABELS[targetStatus] || targetStatus}`,
+            );
+          }
+        });
+        if (liveWrite) {
+          await commitLiveWrite(() => apiWrite(`${API.collectionRuns}/${runId}/status`, payload, 'PATCH'));
+        } else {
+          const run = requireCollectionRun(runId);
+          run.status = targetStatus;
+          run.updated_at = new Date().toISOString();
+          appendLocalAudit(`collection.run.${targetStatus}`, runId, reason);
           persistDemoState();
           renderAll();
         }
@@ -1707,6 +1930,15 @@ document.querySelectorAll('[data-action]').forEach((button) => {
       button.disabled = false;
       syncWriteControls();
     });
+  });
+});
+
+// The lifecycle buttons key off these id fields; re-evaluate their status
+// gating (and the annotation status readout) as the operator edits them.
+['collection-run-id', 'import-job-id', 'annotation-task-id'].forEach((fieldId) => {
+  document.getElementById(fieldId)?.addEventListener('input', () => {
+    if (fieldId === 'annotation-task-id') renderAnnotationTaskStatus();
+    syncWriteControls();
   });
 });
 

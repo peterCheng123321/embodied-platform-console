@@ -126,6 +126,14 @@
         <label>机器人单元<input id="episode-cell" value="warehouse-a"></label>
         <label>帧数<input id="episode-frames" type="number" min="1" max="1000000" step="1" value="240"></label>
       </div>
+      <div class="form-grid">
+        <label>导入任务 ID<input id="import-job-id" value=""></label>
+      </div>
+      <div class="action-row">
+        <button type="button" data-action="cancel-import" class="btn-danger">取消导入</button>
+        <button type="button" data-action="retry-import" class="btn-primary">重试导入</button>
+      </div>
+      <div id="imports-list" class="data-table"></div>
       <div id="datasets-list" class="data-table"></div>
       <div id="episodes-list" class="data-table"></div>
     </section>
@@ -143,6 +151,11 @@
         <label>采集对象<input id="collection-subject" value="operator-a"></label>
         <label>负责人<input id="collection-assignee" value="operator-a"></label>
         <label>批次 ID<input id="collection-run-id" value="crun_demo_first_person"></label>
+        <label class="wide-field">结束原因<input id="collection-finish-reason" value="" placeholder="可选，最多 500 字"></label>
+      </div>
+      <div class="action-row">
+        <button type="button" data-action="complete-collection-run" class="btn-primary">完成批次</button>
+        <button type="button" data-action="fail-collection-run" class="btn-danger">标记失败</button>
       </div>
       <div id="collection-summary" class="collection-summary" aria-label="采集概览"></div>
       <div class="form-grid">
@@ -184,6 +197,14 @@
         <label>片段 ID<input id="annotation-episode" value="episode-000042"></label>
         <label>负责人<input id="annotation-assignee" value="operator-a"></label>
         <label>状态<select id="annotation-status"><option value="review">待复核</option><option value="open">待处理</option><option value="accepted">已通过</option><option value="rework">返工</option></select></label>
+        <label>标注任务 ID<input id="annotation-task-id" value=""></label>
+      </div>
+      <div class="action-row">
+        <button type="button" data-action="submit-annotation-review" class="btn-primary">提交复核</button>
+        <button type="button" data-action="accept-annotation" class="btn-primary">通过</button>
+        <button type="button" data-action="rework-annotation" class="btn-secondary">退回返工</button>
+        <button type="button" data-action="resubmit-annotation" class="btn-primary">重新提交</button>
+        <span id="annotation-task-status" aria-live="polite"></span>
       </div>
       <div id="annotation-list" class="data-table"></div>
     </section>
