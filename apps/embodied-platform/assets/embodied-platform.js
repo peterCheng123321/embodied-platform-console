@@ -612,7 +612,7 @@ async function loadDemoState(preferSaved = true) {
 
   let fixture = null;
   try {
-    const response = await fetch('fixtures/demo-state.json');
+    const response = await fetchWithTimeout('fixtures/demo-state.json');
     if (response.ok) fixture = await response.json();
   } catch {
     // Fixture unreachable (e.g. backend down and nothing cached); boot empty below.

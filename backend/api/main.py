@@ -21,6 +21,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .embodied.routes import router as embodied_router
@@ -74,6 +75,12 @@ register_embodied_platform_validation_handlers(app)
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect() -> RedirectResponse:
+    """Bare origin lands on the operations console instead of a 404."""
+    return RedirectResponse("/app/", status_code=307)
 
 
 # Mount static apps last so the API routes/healthz take precedence. Guard each

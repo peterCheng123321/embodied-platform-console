@@ -12,6 +12,10 @@ def test_host_serves_labeler_and_embodied_api_same_origin(tmp_path, monkeypatch)
 
     client = TestClient(app)
 
+    root = client.get("/", follow_redirects=False)
+    assert root.status_code == 307
+    assert root.headers["location"] == "/app/"
+
     labeler = client.get("/labeler/")
     assert labeler.status_code == 200
     assert "assets/embodied/embodied.js?v=30" in labeler.text
