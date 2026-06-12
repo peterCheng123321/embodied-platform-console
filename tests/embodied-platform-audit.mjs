@@ -109,7 +109,7 @@ assert.match(backendMain, /app\.mount\(\s*"\/embodied-assets"/, 'host backend mu
 assert.match(backendMain, /app\.mount\(\s*"\/embodied-cache"/, 'host backend must serve materialized episode bundles');
 assert.match(backendPyproject, /"pyarrow>=16"/, 'host backend must declare pyarrow for recorded LeRobot dataset routes');
 assert.doesNotMatch(`${html}\n${js}\n${labelerHtml}\n${labelerJs}\n${labelerConsoleJs}`, /127\.0\.0\.1:8000|127\.0\.0\.1:8001|localhost:8000|localhost:8001/, 'unified platform UI must not call or link to split localhost apps');
-assert.match(labelerHtml, /assets\/embodied\/embodied\.js\?v=30/, 'hosted labeler should include the reviewed v30 temporal JS');
+assert.match(labelerHtml, /assets\/embodied\/embodied\.js\?v=31/, 'hosted labeler should include the reviewed v31 temporal JS');
 assert.match(labelerJs, /escapeHtml\(skill\.label\)/, 'palette must escape skill labels (XSS sink)');
 const swSrc = fs.readFileSync(path.join(root, 'apps', 'embodied-platform', 'sw.js'), 'utf8');
 assert.match(swSrc, /mode === 'navigate'[\s\S]{0,200}caches\.match\('\.\/index\.html'\)/, 'sw must serve the app shell for offline navigations (URL-key mismatch fix)');
