@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, ValidationError
 from .schema import SubtaskSegment
 from .datasets import DEMO_ROOT, DatasetInfo, list_datasets, dataset_root_for
 from .lerobot_reader import list_episodes
-from .episode_materializer import materialize
+from .episode_materializer import MaterializeTimeoutError, materialize
 from .qc import score_annotator
 
 
@@ -476,6 +476,12 @@ def get_dataset_episode(dataset_id: str, episode_index: int) -> JSONResponse:
             raise HTTPException(
                 status_code=404, detail=f"episode {episode_index} not found"
             )
+        except MaterializeTimeoutError as exc:
+            # A hung ffmpeg/ffprobe hit its wall-clock timeout. Surface a
+            # clean retryable 503 instead of an opaque 500; the `with` block
+            # guarantees the per-episode lock is released, so the retry is
+            # not deadlocked behind the dead pipeline.
+            raise HTTPException(status_code=503, detail=str(exc))
     meta = json.loads(bundle.meta.read_text())
     return JSONResponse({
         "video_url": _cache_url(bundle.clip, cache_root),

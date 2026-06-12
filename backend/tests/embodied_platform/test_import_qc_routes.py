@@ -530,6 +530,44 @@ def test_qc_endpoint_is_bounded_against_pathological_same_skill_flood(tmp_path, 
     assert elapsed < 2.0, f"QC took {elapsed:.2f}s — compute bound regressed"
 
 
+def test_qc_endpoint_bounded_against_greedy_product_size_bomb(tmp_path, monkeypatch):
+    """Above MAX_OPTIMAL_GROUP the greedy fallback runs — but pre-cap it still
+    materialized and sorted the FULL n*m IoU candidate product (9M tuples at
+    n=3000; GB-scale transient memory). The per-side MAX_GREEDY_GROUP_LABELS
+    prefix cap bounds the product at cap^2 — the scale the flood test above
+    already proves fast. The capped agreement value is pinned so the cap is
+    observable and deterministic: cap matched IoU-1.0 pairs over the n-wide
+    union denominator."""
+    import time
+
+    from api.embodied_platform.qc import MAX_GREEDY_GROUP_LABELS
+
+    client = _client(tmp_path, monkeypatch)
+    dataset = _create_dataset(client)
+    _create_episode_with_frames(client, dataset["id"], "episode-bomb", 100)
+
+    n = 3000
+    bomb = [
+        {"start_frame": 0, "end_frame": 100, "skill_id": "grasp"} for _ in range(n)
+    ]
+    _save_annotation(client, dataset["id"], "episode-bomb", bomb, assignee="ann-a")
+    _save_annotation(client, dataset["id"], "episode-bomb", bomb, assignee="ann-b")
+
+    start = time.perf_counter()
+    response = client.get(f"/api/embodied-platform/datasets/{dataset['id']}/qc")
+    elapsed = time.perf_counter() - start
+
+    assert response.status_code == 200, response.text
+    row = next(
+        r for r in response.json()["episodes"] if r["episode_id"] == "episode-bomb"
+    )
+    assert row["agreement"] == pytest.approx(MAX_GREEDY_GROUP_LABELS / n)
+    # Generous bound in the established style (see the flood test above):
+    # post-fix this runs in well under a second; only the uncapped full-product
+    # sort (or a Hungarian regression) breaches it.
+    assert elapsed < 4.0, f"QC took {elapsed:.2f}s — greedy product bound regressed"
+
+
 # --- real LeRobot ingest on POST /imports ------------------------------------
 
 
@@ -862,6 +900,150 @@ def test_import_with_nul_byte_in_source_uri_is_not_500(tmp_path, monkeypatch):
     assert response.status_code == 422, response.text
     # Rejected before persistence: no import job (failed or otherwise) recorded.
     assert client.get("/api/embodied-platform/imports").json() == []
+
+
+def test_retry_failed_local_import_reruns_ingest_and_succeeds(tmp_path, monkeypatch):
+    """PATCH failed->queued on a LOCAL-source import must actually RE-RUN the
+    synchronous ingest, not park the job in a dead-end queued state no worker
+    will ever pick up. Once the source root is fixed, the retry materializes
+    the dataset/episodes and drives the job to succeeded."""
+    import shutil
+
+    client = _client(tmp_path, monkeypatch)
+
+    late_root = tmp_path / "late_lerobot"
+    response = client.post(
+        "/api/embodied-platform/imports",
+        headers=_admin_headers(),
+        json={
+            "source_uri": late_root.as_uri(),
+            "dataset_name": "late-demo",
+            "format": "lerobot",
+        },
+    )
+    assert response.status_code == 200, response.text
+    job = response.json()
+    assert job["status"] == "failed", job
+
+    # The operator fixes the source, then retries via the documented
+    # failed->queued transition.
+    shutil.copytree(LEROBOT_FIXTURE, late_root)
+    retry = client.patch(
+        f"/api/embodied-platform/imports/{job['id']}/status",
+        headers=_admin_headers(),
+        json={"status": "queued", "message": "retry after fixing the root"},
+    )
+    assert retry.status_code == 200, retry.text
+    retried = retry.json()
+    assert retried["status"] == "succeeded", retried
+    assert "3" in (retried["message"] or "")
+
+    # The ingest really ran: dataset created and episodes materialized.
+    datasets = client.get("/api/embodied-platform/datasets").json()
+    demo = next(d for d in datasets if d["name"] == "late-demo")
+    assert demo["episode_count"] == 3
+    episodes = [
+        e for e in client.get("/api/embodied-platform/episodes").json()
+        if e["dataset_id"] == demo["id"]
+    ]
+    assert len(episodes) == 3
+    # Audited like the create-path ingest.
+    audit = client.get("/api/embodied-platform/audit-events").json()
+    assert any(e["action"] == "import.succeeded" and e["resource"] == job["id"] for e in audit)
+
+
+def test_retry_failed_local_import_with_still_bad_source_fails_again(tmp_path, monkeypatch):
+    """A retried LOCAL import whose source is STILL broken must come back as a
+    failed job carrying the parse error — never stuck queued."""
+    client = _client(tmp_path, monkeypatch)
+
+    missing_root = (tmp_path / "still_missing").as_uri()
+    job = client.post(
+        "/api/embodied-platform/imports",
+        headers=_admin_headers(),
+        json={
+            "source_uri": missing_root,
+            "dataset_name": "still-broken",
+            "format": "lerobot",
+        },
+    ).json()
+    assert job["status"] == "failed", job
+
+    retry = client.patch(
+        f"/api/embodied-platform/imports/{job['id']}/status",
+        headers=_admin_headers(),
+        json={"status": "queued", "message": "retry without fixing anything"},
+    )
+    assert retry.status_code == 200, retry.text
+    retried = retry.json()
+    assert retried["status"] == "failed", retried
+    assert retried["message"]  # carries the parse error detail.
+    # Nothing materialized on the failed retry either.
+    assert all(d["name"] != "still-broken" for d in client.get("/api/embodied-platform/datasets").json())
+
+
+def test_retry_failed_nonlocal_import_keeps_external_queued_semantics(tmp_path, monkeypatch):
+    """A NON-local (e.g. s3://) failed import retried via failed->queued keeps
+    the original external-worker contract: it stays queued for the external
+    status-PATCH flow — the synchronous parser cannot read remote roots."""
+    client = _client(tmp_path, monkeypatch)
+
+    job = client.post(
+        "/api/embodied-platform/imports",
+        headers=_admin_headers(),
+        json={
+            "source_uri": "s3://robot-lake/run-099",
+            "dataset_name": "remote-retry",
+            "format": "lerobot",
+        },
+    ).json()
+    assert job["status"] == "queued", job
+    for status in ("running", "failed"):
+        r = client.patch(
+            f"/api/embodied-platform/imports/{job['id']}/status",
+            headers=_admin_headers(),
+            json={"status": status, "message": f"external {status}"},
+        )
+        assert r.status_code == 200, r.text
+
+    retry = client.patch(
+        f"/api/embodied-platform/imports/{job['id']}/status",
+        headers=_admin_headers(),
+        json={"status": "queued", "message": "external retry"},
+    )
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["status"] == "queued", retry.json()
+
+
+def test_retry_failed_unsupported_format_import_fails_again_not_stuck_queued(tmp_path, monkeypatch):
+    """Retrying a failed local import whose format has no parser must re-fail
+    with the clear unsupported-format message (mirroring create), not park the
+    job queued forever."""
+    client = _client(tmp_path, monkeypatch)
+
+    job = client.post(
+        "/api/embodied-platform/imports",
+        headers=_admin_headers(),
+        json={
+            "source_uri": LEROBOT_FIXTURE.as_uri(),
+            "dataset_name": "rosbag-retry",
+            "format": "rosbag",
+        },
+    ).json()
+    assert job["status"] == "failed", job
+
+    retry = client.patch(
+        f"/api/embodied-platform/imports/{job['id']}/status",
+        headers=_admin_headers(),
+        json={"status": "queued", "message": "retry the rosbag"},
+    )
+    assert retry.status_code == 200, retry.text
+    retried = retry.json()
+    assert retried["status"] == "failed", retried
+    assert "rosbag" in (retried["message"] or "")
+    # Still nothing materialized.
+    assert client.get("/api/embodied-platform/datasets").json() == []
+    assert client.get("/api/embodied-platform/episodes").json() == []
 
 
 def test_unsupported_import_format_fails_job_without_materializing(tmp_path, monkeypatch):

@@ -23,10 +23,19 @@ Range = tuple[int, int]
 #     repeated-skill groups seen in real annotation; for pathological groups
 #     (e.g. hundreds of identical segments -> a dense all-ones cost matrix, the
 #     Hungarian worst case) the greedy bound avoids cubic blowup.
+#   - MAX_GREEDY_GROUP_LABELS: within the greedy fallback, each same-skill
+#     side is capped to a deterministic prefix (stable sort by range start)
+#     before candidate pairs are built — pre-cap the fallback materialized and
+#     sorted the FULL n*m IoU product, an O(n*m) memory/CPU bomb for hostile
+#     label floods. Extras beyond the cap stay in agreement()'s union
+#     denominator, so a flood under-counts agreement (fail-closed). 512 keeps
+#     the worst-case product at 512^2 ≈ 262k candidates, the scale the
+#     same-skill-flood regression test already proves fast.
 #   - MAX_QC_TASKS: only the first N annotation tasks per episode enter the
 #     O(tasks^2) pairwise-agreement loop (coverage still iterates ALL tasks,
 #     which is cheap). Bounds C(tasks, 2) against an episode flooded with tasks.
 MAX_OPTIMAL_GROUP = 64
+MAX_GREEDY_GROUP_LABELS = 512
 MAX_QC_TASKS = 16
 
 
@@ -211,12 +220,20 @@ def _hungarian_max(matrix: list[list[float]]) -> float:
 def _greedy_match_value(ranges_a: list[Range], ranges_b: list[Range]) -> float:
     """Sum of IoUs of a greedy largest-pair-first one-to-one matching.
 
-    Near-quadratic (O(n^2 log n): it sorts the n^2 candidate pairs) — the bounded
-    fallback for pathological same-skill groups where the O(n^3) Hungarian optimum
-    is not worth the cost (see MAX_OPTIMAL_GROUP). Greedy under-estimates the
-    optimal total, which only ever *lowers* agreement — the gate stays fail-closed
-    (it never inflates agreement past what the optimum would give).
+    The bounded fallback for pathological same-skill groups where the O(n^3)
+    Hungarian optimum is not worth the cost (see MAX_OPTIMAL_GROUP). Each side
+    is first capped to a deterministic prefix of MAX_GREEDY_GROUP_LABELS
+    ranges (stable sort by start, then end) so the candidate product it sorts
+    is bounded at cap^2 — without the cap this materialized the full n*m IoU
+    product, an O(n*m) memory/CPU bomb. Both the greedy choice and the cap
+    only ever *lower* agreement versus the optimum (capped-away ranges remain
+    in the caller's union denominator, matching nothing) — the gate stays
+    fail-closed (it never inflates agreement past what the optimum would give).
     """
+    if len(ranges_a) > MAX_GREEDY_GROUP_LABELS:
+        ranges_a = sorted(ranges_a)[:MAX_GREEDY_GROUP_LABELS]
+    if len(ranges_b) > MAX_GREEDY_GROUP_LABELS:
+        ranges_b = sorted(ranges_b)[:MAX_GREEDY_GROUP_LABELS]
     pairs = sorted(
         (
             (temporal_iou(a, b), i, j)

@@ -72,6 +72,60 @@ def test_demo_qc_scores_perfect_annotator_against_gold(qc_client):
     }
 
 
+def test_score_annotator_caps_pathological_segment_lists():
+    """The exact DP matcher recurses once per annotator segment and memoizes on
+    (index, gold-mask): the <=22 gate bounds only the GOLD side, so an
+    uncapped hostile/buggy annotator list drives unbounded recursion and
+    lru_cache growth (RecursionError 500 at ~1000 segments, worse beyond).
+    Above ANNOTATOR_SEGMENTS_CAP the scorer must truncate deterministically,
+    flag the report, and count the overflow against the annotator
+    (fail-closed) — not crash or hang."""
+    from uuid import UUID
+
+    from api.embodied.qc import ANNOTATOR_SEGMENTS_CAP, score_annotator
+    from api.embodied.schema import SubtaskSegment
+
+    zero = UUID("00000000-0000-0000-0000-000000000000")
+
+    def seg(start: int, end: int, skill: str) -> SubtaskSegment:
+        return SubtaskSegment(
+            annotator_id=zero, episode_index=0,
+            start_frame=start, end_frame=end, skill_id=skill,
+        )
+
+    gold = [seg(0, 10, "reach"), seg(10, 20, "grasp")]
+    flood = [seg(i, i + 5, "reach") for i in range(2000)]
+
+    report = score_annotator("ann-flood", flood, gold, iou_success_threshold=0.7)
+
+    assert report["annotator_segments_capped"] is True
+    # segment_count reports the TRUE submitted count, not the scored prefix.
+    assert report["segment_count"] == 2000
+    # Overflow segments are unscored but not free: they count as failures.
+    overflow = 2000 - ANNOTATOR_SEGMENTS_CAP
+    assert report["false_positive_count"] >= overflow
+    assert report["posterior_beta"] >= overflow
+    # Deterministic: the same input yields the identical report.
+    again = score_annotator("ann-flood", flood, gold, iou_success_threshold=0.7)
+    assert again == report
+
+
+def test_score_annotator_below_cap_is_not_flagged():
+    """An ordinary segment list must score exactly as before, unflagged."""
+    from uuid import UUID
+
+    from api.embodied.qc import score_annotator
+    from api.embodied.schema import SubtaskSegment
+
+    zero = UUID("00000000-0000-0000-0000-000000000000")
+    gold = [SubtaskSegment(annotator_id=zero, episode_index=0,
+                           start_frame=0, end_frame=10, skill_id="reach")]
+    report = score_annotator("ann-ok", list(gold), gold, iou_success_threshold=0.7)
+    assert report["annotator_segments_capped"] is False
+    assert report["matched_count"] == 1
+    assert report["false_positive_count"] == 0
+
+
 def test_demo_qc_counts_misses_and_false_positives(qc_client):
     annotator = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     _post_segments(

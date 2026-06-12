@@ -3,6 +3,14 @@
 This replaces the retired Postgres-backed `/v1/events` service with the
 platform's atomic JSON repository while preserving the client-facing batch
 contract: strict payload validation and idempotency by client event_id.
+
+Retention: after each batch, label_events and telemetry_events are trimmed to
+the most recent EVENTS_RETENTION_CAP rows (FIFO by insertion order) so the
+store — and the per-batch dedupe set rebuilt over it — cannot grow without
+bound. Honest consequence: the idempotency window equals the retained window.
+An event_id replayed while still retained deduplicates as before; an event_id
+that has already been evicted is accepted again. Response semantics
+(accepted/deduplicated/rejected) are otherwise unchanged.
 """
 from __future__ import annotations
 
@@ -17,6 +25,11 @@ from .schema import EventIngestResponse, LabelEventBatch, TelemetryEventBatch, n
 
 
 router = APIRouter(prefix="/v1/events", tags=["event-ingest"])
+
+# Per-collection retention window (see module docstring). 50k rows keeps the
+# state file and the per-batch dedupe-set rebuild bounded while retaining far
+# more history than any active labeling session replays.
+EVENTS_RETENTION_CAP = 50_000
 
 
 def _repo():
@@ -51,6 +64,11 @@ def _ingest(
             state[collection].append(row)
             existing_ids.add(event_id)
             accepted += 1
+        # Retention trim (FIFO): keep only the most recent rows so the store
+        # and the dedupe window stay bounded (see module docstring).
+        rows = state[collection]
+        if len(rows) > EVENTS_RETENTION_CAP:
+            del rows[: len(rows) - EVENTS_RETENTION_CAP]
         return EventIngestResponse(accepted=accepted, deduplicated=deduplicated, rejected=[])
 
     return repo.mutate(_mutate)

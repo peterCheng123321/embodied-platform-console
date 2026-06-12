@@ -111,6 +111,38 @@ def test_missing_tool_raises_runtimeerror(dataset_root, tmp_path, monkeypatch, m
         materialize(dataset_root, 0, cache_root=tmp_path / "cache")
 
 
+def test_subprocess_timeouts_surface_as_materialize_timeout(dataset_root, tmp_path, monkeypatch):
+    """ffmpeg/ffprobe must never hang materialize() forever: every
+    subprocess.run carries a timeout (ffprobe 30s, ffmpeg 120s), and a
+    TimeoutExpired surfaces as the module's RuntimeError family
+    (MaterializeTimeoutError) with a clear message — never a raw
+    TimeoutExpired and never a sealed .complete sentinel."""
+    import api.embodied.episode_materializer as mod
+
+    seen: list[tuple[str, object]] = []
+
+    def fake_run(cmd, *args, **kwargs):
+        seen.append((cmd[0], kwargs.get("timeout")))
+        if cmd[0] == "ffprobe":
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout") or 0)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    with pytest.raises(mod.MaterializeTimeoutError, match="timed out"):
+        materialize(dataset_root, 0, cache_root=tmp_path / "cache")
+
+    # Every invocation carried the per-tool timeout.
+    ffmpeg_timeouts = {t for tool, t in seen if tool == "ffmpeg"}
+    ffprobe_timeouts = {t for tool, t in seen if tool == "ffprobe"}
+    assert ffmpeg_timeouts == {mod.FFMPEG_TIMEOUT_SECONDS}
+    assert ffprobe_timeouts == {mod.FFPROBE_TIMEOUT_SECONDS}
+    # MaterializeTimeoutError must stay a RuntimeError so existing callers that
+    # handle the module's documented error type keep working.
+    assert issubclass(mod.MaterializeTimeoutError, RuntimeError)
+    # A timed-out run must not seal the bundle behind the completion sentinel.
+    assert not (tmp_path / "cache" / dataset_root.name / "ep0" / ".complete").exists()
+
+
 def test_incomplete_bundle_is_rebuilt(dataset_root, tmp_path):
     """A crashed run (no .complete) causes the next call to rebuild, not return stale data."""
     cache = tmp_path / "cache"

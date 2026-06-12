@@ -732,8 +732,67 @@ def update_import_status(
     actor: dict[str, str] = Depends(data_actor),
     repo: JsonRepository = Depends(_repo),
 ) -> ImportJob:
+    """Drive an import job through the status lifecycle.
+
+    For a LOCAL-source job, failed -> queued is a RETRY: the synchronous
+    ingest actually re-runs (create_import's parse/materialize path) instead
+    of parking the job in a dead-end queued state no external worker will
+    ever pick up. As on create, parsing happens OUTSIDE the repository write
+    lock, an unsupported format re-fails with the same clear message, and the
+    job lands back on failed (with the parse error) or on succeeded. NON-local
+    sources keep the original contract: queued waits for the external
+    status-PATCH flow.
+    """
+    # Peek at the job outside the write lock to decide whether this PATCH is a
+    # local-source retry; if so, parse before mutating (never while holding the
+    # lock). The retry is re-validated against the job's CURRENT status inside
+    # _mutate, so a concurrent transition simply falls back to the plain path.
+    retry_failure: str | None = None
+    retry_ingest: IngestResult | None = None
+    is_local_retry = False
+    if req.status == "queued":
+        peeked = next(
+            (
+                row
+                for row in repo.read().get("imports", [])
+                if isinstance(row, dict) and row.get("id") == job_id
+            ),
+            None,
+        )
+        if (
+            peeked is not None
+            and peeked.get("status") == "failed"
+            and _is_local_source(str(peeked.get("source_uri") or ""))
+        ):
+            is_local_retry = True
+            if peeked.get("format") not in SUPPORTED_IMPORT_FORMATS:
+                retry_failure = (
+                    f"unsupported import format {peeked.get('format')!r}: only "
+                    f"{', '.join(sorted(SUPPORTED_IMPORT_FORMATS))} is supported"
+                )
+            else:
+                try:
+                    retry_ingest = parse_lerobot_root(str(peeked.get("source_uri")))
+                except IngestError as exc:
+                    retry_failure = str(exc)
+
     def _mutate(state: dict[str, Any]) -> ImportJob:
         job = _find(state, "imports", job_id)
+        if is_local_retry and job.get("status") == "failed":
+            _transition_job(job, "queued", req.message)
+            _append_audit(state, action="import.status", resource=job_id, detail=req.status, actor=actor)
+            _transition_job(job, "running", "ingest retry started")
+            if retry_failure is not None or retry_ingest is None:
+                failure = retry_failure or "ingest retry produced no result"
+                _transition_job(job, "failed", failure)
+                _append_audit(state, action="import.failed", resource=job_id, detail=failure, actor=actor)
+                return ImportJob.model_validate(job)
+            dataset = _ensure_dataset(state, str(job.get("dataset_name", "")), retry_ingest)
+            created = _materialize_episodes(state, dataset, retry_ingest)
+            message = f"ingested {created} episodes into {dataset['name']}"
+            _transition_job(job, "succeeded", message)
+            _append_audit(state, action="import.succeeded", resource=job_id, detail=message, actor=actor)
+            return ImportJob.model_validate(job)
         _transition_job(job, req.status, req.message)
         _append_audit(state, action="import.status", resource=job_id, detail=req.status, actor=actor)
         return ImportJob.model_validate(job)

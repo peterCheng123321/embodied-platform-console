@@ -142,6 +142,54 @@ def test_telemetry_event_ingest_accepts_mixed_batches_and_deduplicates(tmp_path,
     ]
 
 
+def _hotkey_event(event_id: str, session_id: str, annotator_id: str) -> dict:
+    return {
+        "event_id": event_id,
+        "session_id": session_id,
+        "annotator_id": annotator_id,
+        "ts_client": _now(),
+        "payload": {"event_type": "hotkey.used", "key": "1", "action": "class_select"},
+    }
+
+
+def test_event_retention_trims_store_and_dedupe_window_follows(tmp_path, monkeypatch):
+    """The event store must not grow forever: after each batch the collection
+    is trimmed FIFO to the most recent EVENTS_RETENTION_CAP rows. The dedupe
+    window therefore equals the retained window — an event_id still retained
+    deduplicates, while an EVICTED id is accepted again (documented, honest
+    semantics rather than a silently unbounded store)."""
+    monkeypatch.setattr("api.embodied_platform.event_routes.EVENTS_RETENTION_CAP", 3)
+    client = _client(tmp_path, monkeypatch)
+    session_id = str(uuid4())
+    annotator_id = str(uuid4())
+    ids = [str(uuid4()) for _ in range(5)]
+    events = [_hotkey_event(eid, session_id, annotator_id) for eid in ids]
+
+    first = client.post("/v1/events/telemetry", json={"events": events[:3]})
+    assert first.status_code == 200, first.text
+    assert first.json() == {"accepted": 3, "deduplicated": 0, "rejected": []}
+
+    second = client.post("/v1/events/telemetry", json={"events": events[3:]})
+    assert second.status_code == 200, second.text
+    assert second.json() == {"accepted": 2, "deduplicated": 0, "rejected": []}
+
+    from api.embodied_platform.repository import get_repository
+
+    # FIFO trim: only the 3 most recent (by insertion order) survive.
+    stored = [row["event_id"] for row in get_repository().read()["telemetry_events"]]
+    assert stored == ids[2:]
+
+    # Still-retained id deduplicates...
+    retained_replay = client.post("/v1/events/telemetry", json={"events": [events[3]]})
+    assert retained_replay.json() == {"accepted": 0, "deduplicated": 1, "rejected": []}
+
+    # ...while an evicted id is accepted again: dedupe window == retained window.
+    evicted_replay = client.post("/v1/events/telemetry", json={"events": [events[0]]})
+    assert evicted_replay.json() == {"accepted": 1, "deduplicated": 0, "rejected": []}
+    stored = [row["event_id"] for row in get_repository().read()["telemetry_events"]]
+    assert stored == [ids[3], ids[4], ids[0]]
+
+
 def test_event_ingest_rejects_unknown_discriminators(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     bad = {

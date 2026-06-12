@@ -75,6 +75,25 @@ def test_agreement_no_labels_is_zero():
     assert agreement(_task(), _task()) == 0.0
 
 
+def test_greedy_fallback_caps_per_group_candidate_materialization():
+    """Above MAX_OPTIMAL_GROUP the greedy fallback runs — but it must not
+    materialize and sort the FULL n*m IoU product (an O(n*m) memory/CPU bomb
+    for hostile same-skill label floods). Each side is capped to a
+    deterministic prefix (MAX_GREEDY_GROUP_LABELS, after a stable sort by
+    range start) while the extras stay in agreement()'s union denominator: a
+    flood therefore UNDER-counts agreement (fail-closed) with an exactly
+    predictable value — cap matched IoU-1.0 pairs over n — never a blowup."""
+    from api.embodied_platform.qc import MAX_GREEDY_GROUP_LABELS
+
+    n = MAX_GREEDY_GROUP_LABELS * 2
+    flood_a = _task(*[(0, 100, "grasp")] * n)
+    flood_b = _task(*[(0, 100, "grasp")] * n)
+
+    value = agreement(flood_a, flood_b)
+
+    assert value == pytest.approx(MAX_GREEDY_GROUP_LABELS / n)
+
+
 def test_agreement_one_sided_skill_counts_against_agreement():
     # A and B agree perfectly on "grasp" (IoU 1.0). A adds an *extra* "place"
     # segment that B never labeled. That spurious one-sided segment must DRAG

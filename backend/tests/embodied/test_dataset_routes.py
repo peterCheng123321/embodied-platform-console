@@ -186,6 +186,37 @@ def test_get_episode_bundle_out_of_range_404(recorded_client):
         assert r.status_code == 404, f"episodes/{ix}: {r.status_code} {r.text}"
 
 
+def test_materialize_timeout_returns_503_and_releases_lock(recorded_client, monkeypatch):
+    """A hung ffmpeg/ffprobe (TimeoutExpired) must surface as a clean 503 JSON
+    detail — not an unhandled 500 — and the per-episode materialization lock
+    must be RELEASED on the way out, so a follow-up request for the same
+    episode gets the same clean error instead of deadlocking behind the dead
+    pipeline."""
+    import subprocess as subprocess_mod
+
+    import api.embodied.episode_materializer as mat_mod
+
+    client, _, _ = recorded_client
+    # Pass the _require() PATH probe even on hosts without ffmpeg installed —
+    # subprocess.run below never actually executes anything.
+    monkeypatch.setattr(mat_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def hanging_run(cmd, *args, **kwargs):
+        raise subprocess_mod.TimeoutExpired(cmd, kwargs.get("timeout") or 0)
+
+    monkeypatch.setattr(mat_mod.subprocess, "run", hanging_run)
+
+    first = client.get("/api/embodied/datasets/recorded/episodes/0")
+    assert first.status_code == 503, first.text
+    assert "timed out" in first.json()["detail"]
+
+    # Lock released: the second request re-attempts materialization and gets
+    # the same clean 503 — it neither deadlocks nor serves a torn bundle.
+    second = client.get("/api/embodied/datasets/recorded/episodes/0")
+    assert second.status_code == 503, second.text
+    assert "timed out" in second.json()["detail"]
+
+
 def test_concurrent_bundle_requests_serialize_materialization(recorded_client, monkeypatch):
     """Two simultaneous first requests for the same uncached episode must not
     both run the ffmpeg pipeline: overlapping materialize() calls write the

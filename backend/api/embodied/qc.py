@@ -16,6 +16,16 @@ from .schema import SubtaskSegment
 JEFFREYS_ALPHA0 = 0.5
 JEFFREYS_BETA0 = 0.5
 
+# Compute bound for the exact DP matcher. Its <=22 gate bounds only the GOLD
+# (bitmask) side; the recursion depth and (index, mask) memo both grow with the
+# ANNOTATOR segment count, which arrives uncapped from POST /segments — ~1000
+# segments already overflow Python's recursion limit (a 500), and the lru_cache
+# grows without bound before that. score_annotator therefore scores only the
+# first ANNOTATOR_SEGMENTS_CAP segments (a deterministic prefix in stored
+# order), flags the report, and counts the unscored overflow as failures so a
+# flood can never be free (fail-closed).
+ANNOTATOR_SEGMENTS_CAP = 512
+
 
 def temporal_iou(a: tuple[int, int], b: tuple[int, int]) -> float:
     """Intersection-over-union of two integer frame ranges [start, end)."""
@@ -55,7 +65,9 @@ def match_segments(
     """Maximum-weight skill-constrained temporal matching.
 
     For ordinary labeler episodes the segment count is small, so use an exact
-    dynamic-programming assignment. For very large episodes, fall back to a
+    dynamic-programming assignment. For very large episodes — more than 22
+    gold segments (the bitmask side) or more than ANNOTATOR_SEGMENTS_CAP
+    annotator segments (the recursion/memo side) — fall back to a
     deterministic greedy match rather than pulling scipy into the platform
     backend solely for Hungarian assignment.
     """
@@ -72,7 +84,7 @@ def match_segments(
                 row.append(temporal_iou((a.start_frame, a.end_frame), (g.start_frame, g.end_frame)))
         weights.append(row)
 
-    if len(gold) <= 22:
+    if len(gold) <= 22 and len(annotator) <= ANNOTATOR_SEGMENTS_CAP:
         @lru_cache(maxsize=None)
         def solve(i: int, used_gold_mask: int) -> tuple[float, tuple[tuple[int, int, float], ...]]:
             if i >= len(annotator):
@@ -114,7 +126,14 @@ def score_annotator(
     *,
     iou_success_threshold: float,
 ) -> dict[str, Any]:
-    pairs, unmatched_a, unmatched_g = match_segments(segments, gold)
+    # Compute bound (see ANNOTATOR_SEGMENTS_CAP): score a deterministic prefix,
+    # flag the report, and count the unscored overflow as failures below so a
+    # segment flood degrades to a terrible-but-deterministic score, never a
+    # recursion blowup.
+    capped = len(segments) > ANNOTATOR_SEGMENTS_CAP
+    scored = segments[:ANNOTATOR_SEGMENTS_CAP] if capped else segments
+    overflow = len(segments) - len(scored)
+    pairs, unmatched_a, unmatched_g = match_segments(scored, gold)
 
     alpha = JEFFREYS_ALPHA0
     beta = JEFFREYS_BETA0
@@ -137,8 +156,12 @@ def score_annotator(
         observe(False)
 
     for a_idx in unmatched_a:
-        _ = segments[a_idx]
+        _ = scored[a_idx]
         observe(False)
+
+    # Each over-cap segment is an unscored extra: a failure observation, same
+    # as an unmatched segment (no per-item work — plain arithmetic).
+    beta += float(overflow)
 
     per_skill_iou = {
         skill: sum(values) / len(values)
@@ -149,8 +172,9 @@ def score_annotator(
         "annotator_id": annotator_id,
         "segment_count": len(segments),
         "matched_count": len(pairs),
-        "false_positive_count": len(unmatched_a),
+        "false_positive_count": len(unmatched_a) + overflow,
         "miss_count": len(unmatched_g),
+        "annotator_segments_capped": capped,
         "posterior_alpha": alpha,
         "posterior_beta": beta,
         "posterior_mean": alpha / (alpha + beta),

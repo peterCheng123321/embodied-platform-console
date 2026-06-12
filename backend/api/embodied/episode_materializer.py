@@ -27,6 +27,22 @@ from .lerobot_reader import get_episode_meta
 SPRITE_FPS = 2
 SPRITE_W, SPRITE_H = 128, 72
 
+# Hard wall-clock ceilings for the external tools. Sync route handlers run in
+# Starlette's bounded threadpool while holding the per-episode materialize
+# lock — a hung ffmpeg/ffprobe (corrupt mp4, dead NFS mount) would otherwise
+# pin that thread and lock forever. ffprobe only reads stream metadata (30s is
+# generous); ffmpeg re-encodes a full episode clip (120s covers long episodes
+# on slow disks while still bounding the worst case).
+FFPROBE_TIMEOUT_SECONDS = 30
+FFMPEG_TIMEOUT_SECONDS = 120
+
+
+class MaterializeTimeoutError(RuntimeError):
+    """An ffmpeg/ffprobe invocation exceeded its wall-clock timeout.
+
+    A RuntimeError subclass so existing handlers of the module's documented
+    error type keep working, while routes can map timeouts to 503."""
+
 
 @dataclass(frozen=True)
 class BundlePaths:
@@ -43,10 +59,21 @@ def _require(tool: str) -> None:
         )
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess:
-    """Run a subprocess, capturing stderr; on failure re-raise as RuntimeError."""
+def _run(cmd: list[str], *, timeout: float) -> subprocess.CompletedProcess:
+    """Run a subprocess, capturing stderr; on failure re-raise as RuntimeError.
+
+    Every invocation carries a wall-clock timeout: a hung tool raises
+    MaterializeTimeoutError instead of pinning the worker thread (and the
+    caller's per-episode lock) forever.
+    """
     try:
-        return subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return subprocess.run(
+            cmd, check=True, capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired as e:
+        raise MaterializeTimeoutError(
+            f"{cmd[0]} timed out after {timeout:.0f}s while materializing the episode"
+        ) from e
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"{cmd[0]} failed (exit {e.returncode}): {e.stderr.strip()}"
@@ -57,7 +84,7 @@ def _ffprobe_frame_count(mp4: Path) -> int:
     res = _run([
         "ffprobe", "-v", "0", "-select_streams", "v:0", "-count_frames",
         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(mp4),
-    ])
+    ], timeout=FFPROBE_TIMEOUT_SECONDS)
     raw = res.stdout.strip()
     try:
         return int(raw)
@@ -83,7 +110,7 @@ def _trim_clip(src_mp4: Path, dst: Path, from_ts: float, duration: float) -> Non
         "ffmpeg", "-y", "-ss", f"{from_ts:.3f}", "-i", str(src_mp4),
         "-t", f"{duration:.3f}",
         "-c:v", "libx264", "-crf", "23", "-preset", "slow", "-an", str(dst),
-    ])
+    ], timeout=FFMPEG_TIMEOUT_SECONDS)
 
 
 def _generate_sprite(clip_mp4: Path, dst_png: Path, duration: float) -> None:
@@ -97,7 +124,7 @@ def _generate_sprite(clip_mp4: Path, dst_png: Path, duration: float) -> None:
         "ffmpeg", "-y", "-i", str(clip_mp4),
         "-vf", f"fps={SPRITE_FPS},scale={SPRITE_W}:{SPRITE_H},tile={n_tiles}x1",
         "-frames:v", "1", str(dst_png),
-    ])
+    ], timeout=FFMPEG_TIMEOUT_SECONDS)
 
 
 def _extract_proprio(
