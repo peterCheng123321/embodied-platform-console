@@ -10,8 +10,6 @@ Pins the hardened behavior of the platform auth + read paths:
 """
 from __future__ import annotations
 
-import json
-
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -99,13 +97,20 @@ def _create_episode(client: TestClient, dataset_id: str, episode_id: str = "epis
 
 
 def _corrupt_state_client(tmp_path, monkeypatch, mutate) -> TestClient:
-    """Build a client whose on-disk state.json has been corrupted via ``mutate``
-    (a callable taking the state dict). Writes the state file directly, bypassing
-    schema validation, to simulate corrupt persisted data."""
+    """Build a client whose persisted state has been corrupted via ``mutate``
+    (a callable taking the state dict). Plants the corruption through the public
+    repository surface (``get_repository().write``) — bypassing schema validation
+    but staying backend-agnostic, so the same corrupt-persisted-data scenario is
+    exercised in both JSON-file and Postgres mode."""
+    # Build the client first: it monkeypatches the env that selects/locates the
+    # repository backend before the corrupt state is written through it.
+    client = _client(tmp_path, monkeypatch, raise_server_exceptions=False)
+    from api.embodied_platform.repository import get_repository
+
     state: dict = {}
     mutate(state)
-    (tmp_path / "state.json").write_text(json.dumps(state))
-    return _client(tmp_path, monkeypatch, raise_server_exceptions=False)
+    get_repository().write(state)
+    return client
 
 
 def test_principal_signature_encoding_is_injective(tmp_path, monkeypatch):

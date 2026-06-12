@@ -58,9 +58,9 @@ def test_label_event_ingest_is_idempotent_and_append_only(tmp_path, monkeypatch)
     assert duplicate.status_code == 200, duplicate.text
     assert duplicate.json() == {"accepted": 0, "deduplicated": 1, "rejected": []}
 
-    from api.embodied_platform.repository import JsonRepository
+    from api.embodied_platform.repository import get_repository
 
-    state = JsonRepository().read()
+    state = get_repository().read()
     assert len(state["label_events"]) == 1
     stored = state["label_events"][0]
     assert stored["event_id"] == event_id
@@ -132,9 +132,9 @@ def test_telemetry_event_ingest_accepts_mixed_batches_and_deduplicates(tmp_path,
     assert second.status_code == 200, second.text
     assert second.json() == {"accepted": 1, "deduplicated": 1, "rejected": []}
 
-    from api.embodied_platform.repository import JsonRepository
+    from api.embodied_platform.repository import get_repository
 
-    state = JsonRepository().read()
+    state = get_repository().read()
     assert [event["event_type"] for event in state["telemetry_events"]] == [
         "session.started",
         "task.opened",

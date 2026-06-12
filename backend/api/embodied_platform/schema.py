@@ -45,6 +45,13 @@ class StrictModel(BaseModel):
     @classmethod
     def _strip_strings(cls, value):
         if isinstance(value, str):
+            # Reject NUL outright instead of letting it reach the state store:
+            # PostgreSQL jsonb cannot represent U+0000 (psycopg raises, turning
+            # the request into a 500 on the PG backend), and a NUL is never
+            # meaningful in any of these fields. Rejecting at the validation
+            # boundary keeps both backends on the same clean 422.
+            if "\x00" in value:
+                raise ValueError("string fields must not contain NUL (\\x00) bytes")
             return value.strip()
         return value
 

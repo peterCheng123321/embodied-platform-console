@@ -8,6 +8,7 @@ Pins the hardened persistence behavior:
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,13 @@ from .repository_contract import ALL_CONTRACTS
 
 
 LOGIN_PASSCODE = "pytest-login-passcode"
+
+# Marks tests that exercise JSON-file storage mechanics by definition (state
+# file + flock lock-path behavior), so they only run in JSON-file mode.
+_JSON_FILE_ONLY = pytest.mark.skipif(
+    bool(os.environ.get("XINGJU_EMBODIED_PLATFORM_DSN", "").strip()),
+    reason="exercises JSON-file storage mechanics; the PG equivalent lives in test_pg_repository.py",
+)
 
 
 def _client(tmp_path, monkeypatch) -> TestClient:
@@ -148,6 +156,7 @@ def test_repository_writes_spec_compliant_json_rejecting_nan(tmp_path):
         json.loads(state_file.read_text(), parse_constant=_reject_constant)
 
 
+@_JSON_FILE_ONLY
 def test_unwritable_lock_path_still_serves_reads_200(tmp_path, monkeypatch):
     """A read-only / unwritable data root must NOT 500 every endpoint. The
     file lock is opened in append-create mode on the read path; if the lock file
@@ -252,7 +261,7 @@ def test_metric_key_length_is_bounded_422(tmp_path, monkeypatch):
 
 def test_valid_metrics_and_confidence_round_trip_through_full_stack(tmp_path, monkeypatch):
     """Guards the hardened fields' happy path: valid metric floats and a valid
-    confidence must persist and read back intact, and the on-disk state.json must
+    confidence must persist and read back intact, and the persisted state must
     be spec JSON. Without this, the NaN/cap changes could silently break model
     metric tracking while every rejection test still passes."""
     import json
@@ -291,5 +300,11 @@ def test_valid_metrics_and_confidence_round_trip_through_full_stack(tmp_path, mo
     assert annotation.status_code == 200, annotation.text
     assert annotation.json()["labels"][0]["confidence"] == 0.8
 
-    # On-disk state must parse with a strict (NaN-rejecting) JSON parser.
-    json.loads((tmp_path / "state.json").read_text(), parse_constant=_reject_constant)
+    # The persisted state (either backend) must re-serialize as strict spec
+    # JSON — allow_nan=False raises if any NaN/Infinity reached the stored
+    # floats — and the metrics must have survived persistence intact.
+    from api.embodied_platform.repository import get_repository
+
+    state = get_repository().read()
+    json.dumps(state, allow_nan=False)
+    assert state["models"][0]["metrics"] == {"success_rate": 0.92, "loss": 0.13}

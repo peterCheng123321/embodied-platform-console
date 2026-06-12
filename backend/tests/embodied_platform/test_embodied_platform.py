@@ -1,10 +1,20 @@
 """Tests for the embodied-only platform MVP API."""
 from __future__ import annotations
 
+import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+# Marks tests that exercise JSON-file storage mechanics by definition
+# (multi-process flock serialization on the state file), so they only run in
+# JSON-file mode.
+_JSON_FILE_ONLY = pytest.mark.skipif(
+    bool(os.environ.get("XINGJU_EMBODIED_PLATFORM_DSN", "").strip()),
+    reason="exercises JSON-file storage mechanics; the PG equivalent lives in test_pg_repository.py",
+)
 
 
 def _write_dataset_in_process(path: str, index: int) -> int:
@@ -778,7 +788,10 @@ def test_json_repository_mutations_preserve_parallel_writes(tmp_path):
     assert len(repo.read()["audit_events"]) == 40
 
 
+@_JSON_FILE_ONLY
 def test_json_repository_mutations_preserve_multi_process_writes(tmp_path):
+    # Also kept out of PG mode because forking worker processes while the
+    # psycopg connection pool is open in the parent is unsafe.
     from api.embodied_platform.repository import JsonRepository
 
     with ProcessPoolExecutor(max_workers=6) as pool:

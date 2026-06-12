@@ -10,14 +10,24 @@ temporal-IoU coverage + inter-annotator agreement, and POST
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
 # Local LeRobot v2 fixture (meta/info.json + meta/episodes.jsonl, 3 episodes).
 LEROBOT_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "lerobot_demo"
+
+# Marks tests that exercise JSON-file storage mechanics by definition (e.g. a
+# bare NaN token that only ``json.load`` of a state FILE can produce — jsonb
+# cannot hold one), so they only run in JSON-file mode.
+_JSON_FILE_ONLY = pytest.mark.skipif(
+    bool(os.environ.get("XINGJU_EMBODIED_PLATFORM_DSN", "").strip()),
+    reason="exercises JSON-file storage mechanics; the PG equivalent lives in test_pg_repository.py",
+)
 
 LOGIN_PASSCODE = "pytest-login-passcode"
 
@@ -143,10 +153,14 @@ def _save_annotation_typed(
     return response.json()
 
 
-def _corrupt_state_client(tmp_path, monkeypatch, mutate) -> TestClient:
-    """Build a client whose on-disk state.json has been corrupted via ``mutate``
-    (a callable taking the state dict). Writes the state file directly, bypassing
-    schema validation, to simulate corrupt persisted data reaching QC."""
+def _corrupt_state_client(tmp_path, monkeypatch, mutate, *, via_state_file: bool = False) -> TestClient:
+    """Build a client whose persisted state has been corrupted via ``mutate``
+    (a callable taking the state dict). By default the corruption is planted
+    through the public repository surface (``get_repository().write``) —
+    bypassing schema validation but staying backend-agnostic so the scenario is
+    exercised in both JSON-file and Postgres mode. ``via_state_file=True`` writes
+    state.json directly instead, for corruption that is NOT valid spec JSON
+    (e.g. a bare NaN token) and therefore only exists in JSON-file mode."""
     from api.embodied_platform.routes import register_validation_handlers, router
 
     monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path))
@@ -198,7 +212,14 @@ def _corrupt_state_client(tmp_path, monkeypatch, mutate) -> TestClient:
         "audit_events": [],
     }
     mutate(state)
-    (tmp_path / "state.json").write_text(json.dumps(state))
+    if via_state_file:
+        # json.dumps default allow_nan=True can emit bare NaN/Infinity tokens
+        # that only the file-backed repository's json.load will ever read back.
+        (tmp_path / "state.json").write_text(json.dumps(state))
+    else:
+        from api.embodied_platform.repository import get_repository
+
+        get_repository().write(state)
 
     app = FastAPI()
     app.include_router(router)
@@ -438,13 +459,16 @@ def test_qc_over_corrupt_label_returns_failing_report_not_500(tmp_path, monkeypa
     assert row["passed"] is False
 
 
+@_JSON_FILE_ONLY
 def test_qc_over_corrupt_frame_count_returns_failing_report_not_500(tmp_path, monkeypatch):
     """A NaN frame_count on disk (json.load accepts bare NaN by default) must not
-    blow up int(); it degrades to 0 -> failing row, never a 500."""
+    blow up int(); it degrades to 0 -> failing row, never a 500. A bare NaN can
+    only exist in the JSON state FILE — jsonb cannot represent it — so this is
+    json-mode-only by definition (hence via_state_file + the skipif)."""
     def _corrupt(state):
         state["episodes"][0]["frame_count"] = float("nan")
 
-    client = _corrupt_state_client(tmp_path, monkeypatch, _corrupt)
+    client = _corrupt_state_client(tmp_path, monkeypatch, _corrupt, via_state_file=True)
 
     response = client.get("/api/embodied-platform/datasets/ds-corrupt/qc")
     assert response.status_code == 200, response.text
@@ -822,9 +846,11 @@ def test_import_with_nan_fps_is_failed_job_not_500(tmp_path, monkeypatch):
 
 
 def test_import_with_nul_byte_in_source_uri_is_not_500(tmp_path, monkeypatch):
-    """A NUL byte in source_uri must not 500. Path(...).resolve() raises
-    ValueError('embedded null byte'), which _resolve_local_root catches and maps
-    to a clean FAILED job (never a 500)."""
+    """A NUL byte in source_uri must not 500 — on EITHER backend. It is rejected
+    at the validation boundary (StrictModel refuses NUL in string fields) with a
+    clean 422 before anything is persisted: PostgreSQL jsonb cannot store U+0000,
+    so letting it reach the state store would 500 the PG backend while JSON-file
+    mode silently persisted it. Nothing (no job row) may be left behind."""
     client = _no_raise_client(tmp_path, monkeypatch)
     response = client.post(
         "/api/embodied-platform/imports",
@@ -832,9 +858,10 @@ def test_import_with_nul_byte_in_source_uri_is_not_500(tmp_path, monkeypatch):
         json={"source_uri": "/tmp/lerobot\x00root", "dataset_name": "nul-ds", "format": "lerobot"},
     )
     assert response.status_code != 500, response.text
-    # Convention: a parse failure is a persisted FAILED job (200), not a crash.
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "failed", response.text
+    # Pinned exact status: rejected at the request boundary on both backends.
+    assert response.status_code == 422, response.text
+    # Rejected before persistence: no import job (failed or otherwise) recorded.
+    assert client.get("/api/embodied-platform/imports").json() == []
 
 
 def test_unsupported_import_format_fails_job_without_materializing(tmp_path, monkeypatch):
