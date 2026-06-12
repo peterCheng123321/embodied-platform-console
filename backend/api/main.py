@@ -82,6 +82,7 @@ _ROOT_DIR = Path(__file__).resolve().parents[2]
 _SPA_DIR = _ROOT_DIR / "apps" / "embodied-platform"
 _LABELER_DIR = _ROOT_DIR / "apps" / "embodied-labeler"
 _LABELER_ASSETS_DIR = _LABELER_DIR / "assets" / "embodied"
+_VENDOR_DIR = _ROOT_DIR / "apps" / "_vendor"
 
 
 def _embodied_cache_dir() -> Path:
@@ -118,3 +119,8 @@ if _SPA_DIR.is_dir():
     app.mount("/app", StaticFiles(directory=_SPA_DIR, html=True), name="embodied-platform-app")
 else:  # pragma: no cover - defensive
     logger.warning("SPA directory not found at %s; /app not mounted", _SPA_DIR)
+
+if _VENDOR_DIR.is_dir():
+    app.mount("/vendor", StaticFiles(directory=_VENDOR_DIR), name="vendor")
+else:  # pragma: no cover - defensive
+    logger.warning("Vendored assets directory not found at %s; /vendor not mounted — run scripts/vendor-assets.sh", _VENDOR_DIR)

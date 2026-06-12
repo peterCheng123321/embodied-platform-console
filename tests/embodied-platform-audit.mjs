@@ -263,10 +263,10 @@ assert.doesNotMatch(css, /#059669|rgba\(5,\s*150,\s*105/i, 'no Tailwind emerald 
 assert.doesNotMatch(css, /#34e0a1|#1f8f78|#2f6f63|rgba\(52,\s*224,\s*161/i, 'old teal-green brand/grain literals should be removed');
 assert.doesNotMatch(css, /--bg:\s*#08110f/, 'old dark Ground Control background should be removed');
 
-// Two Google Font families (spec §1): IBM Plex Sans SC, IBM Plex Mono.
-for (const family of ['IBM\\+Plex\\+Sans\\+SC', 'IBM\\+Plex\\+Mono']) {
-  assert.match(html, new RegExp(family), `Google Fonts link should request ${family.replace(/\\\+/g, ' ')}`);
-}
+// Fonts/scripts are vendored (deploy readiness A1): zero external CDN bytes.
+assert.match(html, /\/vendor\/fonts\/plex\.css/, 'platform must load the vendored Plex css (no external font CDN)');
+assert.doesNotMatch(`${html}\n${labelerHtml}`, /fonts\.googleapis|fonts\.gstatic|cdn\.tailwindcss|cdn\.jsdelivr/, 'no external CDN references — must be deployable behind the GFW');
+assert.match(labelerHtml, /\/vendor\/tailwind\/tailwind-play\.js/, 'labeler must load the vendored tailwind runtime');
 assert.doesNotMatch(html, /Chakra\+Petch/, 'Chakra Petch should no longer be requested (Plex-only type system)');
 for (const stack of ['IBM Plex Sans SC', 'IBM Plex Mono']) {
   assert.match(css, new RegExp(stack), `CSS font stack should use ${stack}`);
