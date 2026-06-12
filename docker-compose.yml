@@ -23,7 +23,22 @@ services:
       - app
     restart: unless-stopped
 
+  # Postgres mode (scale-out): uncomment, set XINGJU_EMBODIED_PLATFORM_DSN in
+  # .env (postgresql://platform:change-me@postgres:5432/platform), and the app
+  # switches from the single-instance JSON store to PgRepository — at that
+  # point N app replicas are safe behind caddy.
+  # postgres:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: platform
+  #     POSTGRES_PASSWORD: change-me
+  #     POSTGRES_DB: platform
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
 volumes:
   state:
   caddy_data:
   caddy_config:
+  # pgdata:

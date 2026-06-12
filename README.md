@@ -102,9 +102,42 @@ const report = await mod.runCollectionUiRandomWalk({ tab, seed: 424242, steps: 3
 | `XINGJU_EMBODIED_CACHE_ROOT` | Materialized LeRobot episode bundle cache | `backend/data/embodied_cache` |
 | `XINGJU_EMBODIED_DATASET_ROOT` | Optional recorded LeRobot dataset root exposed as `recorded` | unset |
 | `XINGJU_CORS_ORIGINS` | Comma-separated CORS allowlist for the API | `http://127.0.0.1:8099,http://localhost:8099` |
+| `XINGJU_EMBODIED_PLATFORM_DSN` | Postgres DSN — when set, platform state lives in Postgres (`PgRepository`) instead of the JSON file; required for >1 instance | unset (JSON file) |
 
 **Security note:** the defaults above are local-dev placeholders. Set your own strong values and
 front `/session` with real SSO before exposing this anywhere.
+
+## Deploying
+
+Single instance, TLS, daemonized:
+
+```bash
+cp .env.example .env        # set real AUTH_SECRET + LOGIN_PASSCODE (and your domain)
+XINGJU_DOMAIN=console.example.com docker compose up -d --build
+```
+
+Caddy terminates TLS automatically for `XINGJU_DOMAIN` and proxies to the app;
+state persists in the `state` volume. Back it up on a schedule:
+
+```bash
+scripts/backup-state.sh /path/to/backups     # tar + 14-backup rotation
+scripts/restore-state.sh backups/state-<stamp>.tar.gz
+```
+
+CI (`.github/workflows/ci.yml`) runs the backend suite, the static audit, a
+Docker image build, and the **entire suite again on Postgres 16** — both
+storage backends must agree before anything merges.
+
+### Scaling out
+
+The default JSON-file store is **single-instance only** (file locks don't
+coordinate across hosts). To scale horizontally, uncomment the `postgres`
+service in `docker-compose.yml`, set `XINGJU_EMBODIED_PLATFORM_DSN`, and the
+app switches to a Postgres-backed repository (jsonb per collection,
+`SELECT … FOR UPDATE` write serialization across replicas). After that, `app`
+can run N replicas. Known follow-ups before truly large fleets: real SSO/OIDC
+identity (the shared-passcode login is single-team scope), event-ingest
+retention, and object storage for materialized media.
 
 ## License
 
