@@ -1,0 +1,4 @@
+{$XINGJU_DOMAIN:localhost} {
+    reverse_proxy app:8099
+    encode gzip
+}

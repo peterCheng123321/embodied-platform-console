@@ -1,0 +1,6 @@
+.git
+backups/
+backend/data/
+**/__pycache__
+.pytest_cache
+docs/
