@@ -113,6 +113,12 @@ assert.match(labelerHtml, /assets\/embodied\/embodied\.js\?v=30/, 'hosted labele
 assert.match(labelerJs, /escapeHtml\(skill\.label\)/, 'palette must escape skill labels (XSS sink)');
 const swSrc = fs.readFileSync(path.join(root, 'apps', 'embodied-platform', 'sw.js'), 'utf8');
 assert.match(swSrc, /mode === 'navigate'[\s\S]{0,200}caches\.match\('\.\/index\.html'\)/, 'sw must serve the app shell for offline navigations (URL-key mismatch fix)');
+const labelerCss = fs.readFileSync(path.join(labelerDir, 'assets', 'embodied', 'embodied.css'), 'utf8');
+for (const tok of ['--r-1: 4px', '--r-2: 8px', '--motion-fast: 120ms', '--motion-base: 180ms', '--ease: cubic-bezier(0.2, 0, 0, 1)']) {
+  assert.ok(css.includes(tok), `platform css must carry the shared design token ${tok}`);
+  assert.ok(labelerCss.includes(tok), `labeler css must carry the shared design token ${tok}`);
+}
+assert.doesNotMatch(`${css}\n${labelerCss}`, /transition:\s*all\b/, 'no transition:all anywhere (motion grammar)');
 assert.match(labelerJs, /If-Match/, 'labeler saves must carry the optimistic-concurrency If-Match token');
 assert.match(labelerJs, /409/, 'labeler must handle the stale-write conflict status');
 assert.match(labelerHtml, /<video[^>]*\bmuted\b/, 'labeler video must be muted (no audio track; Chrome power policy pauses unmuted video-only media)');

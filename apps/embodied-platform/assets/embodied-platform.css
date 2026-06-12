@@ -6,6 +6,10 @@
                           + Latin display accents (eyebrows, units)
    =========================================================================== */
 
+/* [hidden] must always win — several layout rules (display:flex/grid) would
+   otherwise defeat the UA's display:none. */
+[hidden] { display: none !important; }
+
 :root {
   /* surfaces & elevation */
   --bg: #f7faf9;
