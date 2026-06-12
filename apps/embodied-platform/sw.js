@@ -1,5 +1,6 @@
 const CACHE = 'embodied-platform-v16';
 const ASSETS = [
+  './',
   './index.html',
   './assets/embodied-platform.css?v=15',
   './assets/embodied-platform.js?v=15',
@@ -38,6 +39,13 @@ self.addEventListener('fetch', (event) => {
     || req.headers.has('range')
     || /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(req.url)
   ) {
+    return;
+  }
+  // App-shell fallback: navigations request the mount path (e.g. '/app/'), which
+  // never URL-matches the precached './index.html' entry. Serve the cached shell
+  // for any navigation when the network is down so the SPA still boots offline.
+  if (req.mode === 'navigate') {
+    event.respondWith(fetch(req).catch(() => caches.match('./index.html')));
     return;
   }
   event.respondWith(fetch(req).catch(() => caches.match(req)));

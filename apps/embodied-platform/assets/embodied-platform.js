@@ -38,6 +38,7 @@ const state = {
   degraded: false,
   liveFailures: [],
   demoSavedAt: null,
+  demoUnavailable: false,
 };
 
 const API_READ_TIMEOUT_MS = 8000;
@@ -345,6 +346,11 @@ function writeBlockReason(action = null) {
   return '';
 }
 
+// Buttons whose runAction is still in flight; keeps concurrent syncWriteControls
+// calls (e.g. from a mid-write refresh) from re-enabling them and allowing a
+// double submit.
+const inFlightActionButtons = new Set();
+
 function syncWriteControls() {
   document.querySelectorAll('[data-action]').forEach((button) => {
     const action = button.dataset.action;
@@ -352,6 +358,7 @@ function syncWriteControls() {
     if (NON_WRITE_ACTIONS.has(button.dataset.action)) {
       button.disabled = !state.ready && button.dataset.action !== 'refresh-monitoring';
     }
+    if (inFlightActionButtons.has(button)) button.disabled = true;
     button.title = button.disabled ? (writeBlockReason(action) || '平台数据仍在加载') : '';
     button.setAttribute('aria-disabled', String(button.disabled));
   });
@@ -378,6 +385,9 @@ function updateModeBanner() {
     mode = 'warning';
   } else if (state.live && !currentPrincipal().signature) {
     text = 'API 已连接（只读）：需要签名写入权限后才能保存变更。';
+    mode = 'warning';
+  } else if (!state.live && state.demoUnavailable) {
+    text = '演示数据不可用 — 以空状态启动';
     mode = 'warning';
   } else if (!state.live) {
     const savedAge = state.demoSavedAt ? `，本地保存于 ${formatSavedAge(state.demoSavedAt)}` : '';
@@ -475,6 +485,9 @@ async function submitLogin() {
   document.getElementById('login-passcode').value = '';
   document.getElementById('login-form').hidden = true;
   renderPrincipal();
+  // Focus must leave the now-hidden form; the login toggle is also hidden once
+  // signed in, so the logout button is the visible successor control.
+  document.getElementById('logout-btn')?.focus();
   syncWriteControls();
   updateModeBanner();
   await refreshState();
@@ -499,11 +512,21 @@ function setupLogin() {
     form.hidden = !form.hidden;
     if (!form.hidden) document.getElementById('login-actor').focus();
   });
-  submit.addEventListener('click', () => { submitLogin(); });
+  const runLogin = () => {
+    if (submit.disabled) return;
+    submit.disabled = true;
+    submitLogin().finally(() => { submit.disabled = false; });
+  };
+  submit.addEventListener('click', runLogin);
   form.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      submitLogin();
+      runLogin();
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      form.hidden = true;
+      toggle.focus();
     }
   });
   logoutBtn.addEventListener('click', logout);
@@ -561,6 +584,7 @@ async function loadDemoState(preferSaved = true) {
   state.degraded = false;
   state.liveFailures = [];
   state.demoSavedAt = null;
+  state.demoUnavailable = false;
 
   if (preferSaved) {
     try {
@@ -578,14 +602,36 @@ async function loadDemoState(preferSaved = true) {
         localStorage.removeItem(DEMO_STATE_KEY);
       }
     } catch {
-      localStorage.removeItem(DEMO_STATE_KEY);
+      try {
+        localStorage.removeItem(DEMO_STATE_KEY);
+      } catch {
+        // localStorage can be disabled by the host shell; fall through to the fixture.
+      }
     }
   }
 
-  const response = await fetch('fixtures/demo-state.json');
-  state.data = normaliseState(await response.json());
+  let fixture = null;
+  try {
+    const response = await fetch('fixtures/demo-state.json');
+    if (response.ok) fixture = await response.json();
+  } catch {
+    // Fixture unreachable (e.g. backend down and nothing cached); boot empty below.
+  }
+
+  if (fixture) {
+    state.data = normaliseState(fixture);
+    state.ready = true;
+    setStatus(false);
+    renderAll();
+    return;
+  }
+
+  // Total failure: no saved state and no fixture. Boot an empty in-memory demo
+  // state instead of leaving state.ready=false (which would lock the app forever).
+  state.data = emptyClientState();
   state.ready = true;
-  setStatus(false);
+  state.demoUnavailable = true;
+  setStatus(false, '演示数据不可用');
   renderAll();
 }
 
@@ -616,6 +662,8 @@ async function loadLiveState() {
   renderAll();
 }
 
+let persistDemoStateWarned = false;
+
 function persistDemoState() {
   if (!state.live && state.data) {
     const savedAt = new Date().toISOString();
@@ -624,7 +672,16 @@ function persistDemoState() {
       saved_at: savedAt,
       data: state.data,
     };
-    localStorage.setItem(DEMO_STATE_KEY, JSON.stringify(envelope));
+    try {
+      localStorage.setItem(DEMO_STATE_KEY, JSON.stringify(envelope));
+    } catch {
+      // localStorage disabled or quota exceeded: keep the in-memory write, warn once.
+      if (!persistDemoStateWarned) {
+        persistDemoStateWarned = true;
+        setStatus(false, '本地存储不可用，演示更改不会保留');
+      }
+      return;
+    }
     state.demoSavedAt = savedAt;
     updateModeBanner();
   }
@@ -652,7 +709,11 @@ async function refreshState(options = {}) {
 }
 
 async function resetDemoState() {
-  localStorage.removeItem(DEMO_STATE_KEY);
+  try {
+    localStorage.removeItem(DEMO_STATE_KEY);
+  } catch {
+    // localStorage disabled: nothing persisted, reset still reloads the fixture.
+  }
   cleanupOldDemoStateKeys();
   clearFieldErrors();
   if (state.live) {
@@ -1637,7 +1698,16 @@ document.querySelectorAll('.module-rail [data-module]').forEach((button) => {
 window.addEventListener('hashchange', () => activateModule(moduleFromHash(), false));
 
 document.querySelectorAll('[data-action]').forEach((button) => {
-  button.addEventListener('click', () => runAction(button.dataset.action));
+  button.addEventListener('click', () => {
+    if (inFlightActionButtons.has(button)) return;
+    inFlightActionButtons.add(button);
+    button.disabled = true;
+    runAction(button.dataset.action).finally(() => {
+      inFlightActionButtons.delete(button);
+      button.disabled = false;
+      syncWriteControls();
+    });
+  });
 });
 
 if ('serviceWorker' in navigator) {
