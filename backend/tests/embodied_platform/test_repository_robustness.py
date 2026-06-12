@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from .repository_contract import ALL_CONTRACTS
 
 
 LOGIN_PASSCODE = "pytest-login-passcode"
@@ -84,6 +87,16 @@ def _create_episode(client: TestClient, dataset_id: str, episode_id: str = "epis
 
 def _reject_constant(value):  # pragma: no cover - helper raises on NaN/Infinity tokens
     raise ValueError(f"non-spec JSON constant in state file: {value}")
+
+
+@pytest.mark.parametrize("contract", ALL_CONTRACTS, ids=lambda fn: fn.__name__)
+def test_json_repository_satisfies_shared_contract(contract, tmp_path):
+    """The backend-agnostic repository contract (repository_contract.py) must
+    hold for JsonRepository — proven against today's behavior FIRST, then
+    reused verbatim by the Postgres backend tests (test_pg_repository.py)."""
+    from api.embodied_platform.repository import JsonRepository
+
+    contract(lambda: JsonRepository(tmp_path / "state.json"))
 
 
 def test_corrupt_state_file_degrades_to_empty_state_not_500(tmp_path, monkeypatch):
