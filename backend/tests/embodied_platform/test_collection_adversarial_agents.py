@@ -14,7 +14,14 @@ def _client(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_AUTH_SECRET", "pytest-embodied-platform-secret")
     monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_LOGIN_PASSCODE", LOGIN_PASSCODE)
+    from api.embodied_platform.repository import empty_state, get_repository
     from api.embodied_platform.routes import router
+
+    # A fresh client means a fresh platform. JSON mode gets that from the
+    # tmp_path data root above; DSN (Postgres) mode shares one table across
+    # every client in the process, so wipe it through the public surface —
+    # the replay-determinism test creates two clients inside one test.
+    get_repository().write(empty_state())
 
     app = FastAPI()
     app.include_router(router)
