@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -255,6 +255,18 @@ def _segments_path(episode_id: str, annotator_id: UUID) -> Path:
     return _data_root() / episode_id / "meta" / "annotations" / str(annotator_id) / "subtask_segments.v1.jsonl"
 
 
+# ETag is the file's mtime in nanoseconds (or "0" when the file does not yet
+# exist). It identifies the version a client most recently read; clients echo
+# it on POST as If-Match so two concurrent tabs can't silently overwrite each
+# other's saves. mtime_ns is monotonic per-file across atomic os.replace, so
+# the etag changes on every successful write.
+def _etag(path: Path) -> str:
+    try:
+        return str(path.stat().st_mtime_ns)
+    except FileNotFoundError:
+        return "0"
+
+
 class SegmentsRequest(BaseModel):
     episode_id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
     annotator_id: UUID
@@ -271,13 +283,29 @@ class SegmentsResponse(BaseModel):
 @router.post("/segments", response_model=SegmentsResponse)
 def post_segments(
     req: SegmentsRequest,
+    response: Response,
     x_annotator_id: UUID = Header(..., alias="X-Annotator-Id"),
+    if_match: str | None = Header(default=None, alias="If-Match"),
 ) -> SegmentsResponse:
     # Defense-in-depth: body annotator_id and header must agree, so a
     # body-tampering attempt from a co-resident origin fails closed.
     if x_annotator_id != req.annotator_id:
         raise HTTPException(status_code=403, detail="annotator_id mismatch")
     out = _segments_path(req.episode_id, req.annotator_id)
+    # Optimistic concurrency: when If-Match is supplied, fail with 409 if the
+    # file has changed since the client last read it. Omitting If-Match is a
+    # deliberate force-overwrite (the manual "save" retry after a conflict).
+    if if_match is not None:
+        current = _etag(out)
+        if if_match != current:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "stale_write",
+                    "expected_etag": current,
+                    "provided_etag": if_match,
+                },
+            )
     out.parent.mkdir(parents=True, exist_ok=True)
     # Atomic write: serialize to a sibling .tmp, fsync to flush the page cache,
     # then os.replace into place. os.replace is atomic on POSIX, so a crash
@@ -300,11 +328,13 @@ def post_segments(
         except OSError:
             pass
         raise
+    response.headers["ETag"] = _etag(out)
     return SegmentsResponse(written=len(req.segments))
 
 
 @router.get("/segments", response_model=list[SubtaskSegment])
 def get_segments(
+    response: Response,
     episode_id: str = Query(..., min_length=1, pattern=r"^[A-Za-z0-9_-]+$"),
     annotator_id: UUID = Query(...),
     x_annotator_id: UUID = Header(..., alias="X-Annotator-Id"),
@@ -315,6 +345,9 @@ def get_segments(
     if x_annotator_id != annotator_id:
         raise HTTPException(status_code=403, detail="annotator_id mismatch")
     path = _segments_path(episode_id, annotator_id)
+    # Version token for optimistic concurrency — present even when the file
+    # doesn't exist yet ("0"), so a first save can still be conflict-checked.
+    response.headers["ETag"] = _etag(path)
     if not path.exists():
         return []
     out: list[SubtaskSegment] = []

@@ -1988,6 +1988,17 @@ const saveBtn = document.getElementById('save-btn');
 // doesn't fire two concurrent POSTs and let the wrong one win.
 let saveInFlight = false;
 
+// Optimistic-concurrency token for the segments file. Set from the ETag header
+// on every successful GET and POST. Sent back as If-Match on POST so two tabs
+// editing the same annotator's file can't silently overwrite each other.
+// null = no read yet (first save sends no If-Match, like before).
+let segmentsEtag = null;
+
+// Sticks to true after a 409 until the next successful save or fresh load.
+// While set, auto-save is suppressed (it would keep firing the same conflict)
+// and the next manual save force-overwrites by sending no If-Match.
+let saveConflict = false;
+
 function segmentsForPersistence(rawSegments) {
     return rawSegments
         .filter(s => s.end_frame > s.start_frame)
@@ -2073,6 +2084,12 @@ async function saveAll({ auto = false } = {}) {
         if (!auto) showToast('保存中…请稍候 Save already running', 'info');
         return;
     }
+    if (auto && saveConflict) {
+        // Don't auto-retry into a known conflict — the labeler must decide
+        // whether to overwrite (manual save) or reload. Keeping state.dirty
+        // is correct so the badge keeps nagging.
+        return;
+    }
     // Don't persist while a segment is mid-creation (S/I pressed, no O/S yet).
     // Auto-save already defers via scheduleAutoSave; manual must mirror that
     // or the in-progress mark is silently dropped from the saved payload.
@@ -2120,20 +2137,43 @@ async function saveAll({ auto = false } = {}) {
             }
             return;
         }
+        const headers = {
+            'Content-Type': 'application/json',
+            // Defense-in-depth: server requires header == body annotator_id.
+            'X-Annotator-Id': annotator_id,
+        };
+        // After a 409, the next manual save deliberately omits If-Match to
+        // force-overwrite. Otherwise, send the last-known etag so the backend
+        // can reject stale writes from another tab.
+        if (segmentsEtag !== null && !(saveConflict && !auto)) {
+            headers['If-Match'] = segmentsEtag;
+        }
         const r = await fetch(`${API_BASE}/api/embodied/segments`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                // Defense-in-depth: server requires header == body annotator_id.
-                'X-Annotator-Id': annotator_id,
-            },
+            headers,
             body: JSON.stringify({ episode_id: EPISODE_ID, annotator_id, segments }),
         });
+        if (r.status === 409) {
+            // Stale write: another session saved since we last read. Handled
+            // BEFORE the generic !r.ok throw — the catch below would flip the
+            // app into local mode and clear dirty, both wrong for a conflict.
+            saveConflict = true;
+            showToast(
+                '保存冲突：另一会话已写入更新版本。点击 "保存" 覆盖，或刷新页面加载最新版本。' +
+                ' (Conflict: another session saved newer changes — click 保存 to overwrite, or reload.)',
+                'error'
+            );
+            if (auto) dirtyBadge.innerHTML = DIRTY_BADGE_DEFAULT_HTML;
+            return;
+        }
         if (!r.ok) {
             const txt = await r.text();
             throw new Error(`${r.status} ${txt.slice(0, 80)}`);
         }
         const data = await r.json();
+        const newEtag = r.headers.get('ETag');
+        if (newEtag) segmentsEtag = newEtag;
+        saveConflict = false;
         setStorageMode('backend', '后端同步已连接');
         if (!auto) {
             showToast(`已保存 ${data.written} 个片段`, 'success');
@@ -2184,6 +2224,11 @@ async function loadExisting() {
             headers: { 'X-Annotator-Id': annotator_id },
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        // Optimistic-concurrency token: remember the version we just read so
+        // the next save can detect another session writing in between.
+        const etag = r.headers.get('ETag');
+        if (etag) segmentsEtag = etag;
+        saveConflict = false;   // fresh read clears any pending conflict
         const segs = await r.json();
         if (localPendingSync) {
             const localSegments = loadSegmentsLocal(annotator_id);
