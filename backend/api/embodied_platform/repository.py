@@ -65,6 +65,34 @@ def empty_state() -> dict[str, Any]:
     return state
 
 
+def coerce_state(raw: dict[str, Any]) -> dict[str, Any]:
+    """Assemble a well-shaped state dict from raw stored values.
+
+    Only recognized keys are carried over; any present-but-non-list collection
+    is coerced to [] so a corrupt shape (e.g. {"datasets": 5}) cannot make
+    every read endpoint 500 while iterating. Shared by JsonRepository and
+    PgRepository so both backends degrade identically.
+    """
+    base = empty_state()
+    for name in COLLECTIONS:
+        value = raw.get(name)
+        base[name] = value if isinstance(value, list) else []
+    settings = raw.get("system_settings")
+    if isinstance(settings, dict):
+        base["system_settings"] = settings
+    return base
+
+
+def get_repository():
+    """Select the state backend by env: DSN set -> Postgres, unset -> JSON file."""
+    dsn = os.environ.get("XINGJU_EMBODIED_PLATFORM_DSN", "").strip()
+    if dsn:
+        from .pg_repository import PgRepository
+
+        return PgRepository(dsn)
+    return JsonRepository()
+
+
 class JsonRepository:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or state_path()
@@ -127,17 +155,7 @@ class JsonRepository:
                 type(state).__name__,
             )
             return empty_state()
-        base = empty_state()
-        # Only carry over recognized keys; coerce any present-but-non-list
-        # collection to [] so a corrupt shape (e.g. {"datasets": 5}) cannot make
-        # every read endpoint 500 while iterating.
-        for name in COLLECTIONS:
-            value = state.get(name)
-            base[name] = value if isinstance(value, list) else []
-        settings = state.get("system_settings")
-        if isinstance(settings, dict):
-            base["system_settings"] = settings
-        return base
+        return coerce_state(state)
 
     def _write_unlocked(self, state: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "pydantic>=2.11",
     "pyarrow>=16",
+    "psycopg[binary,pool]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -15,6 +16,12 @@ dev = [
     "pytest>=8",
     "httpx>=0.27",
 ]
+
+# backend/ is a flat layout with non-package dirs (data/, tests/) next to the
+# api package, so setuptools auto-discovery needs an explicit include for
+# `pip install -e backend` to work (CI installs the package this way).
+[tool.setuptools.packages.find]
+include = ["api*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

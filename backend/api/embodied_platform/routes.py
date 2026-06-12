@@ -15,7 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from .ingest import IngestError, IngestResult, parse_lerobot_root
 from .qc import DatasetNotFound, dataset_qc
-from .repository import JsonRepository
+from .repository import JsonRepository, get_repository
 from .schema import (
     AnnotationTask,
     AnnotationTaskCreate,
@@ -88,8 +88,11 @@ JOB_TRANSITIONS = {
 SUPPORTED_IMPORT_FORMATS = {"lerobot"}
 
 
-def _repo() -> JsonRepository:
-    return JsonRepository()
+def _repo():
+    # Backend selected by env (XINGJU_EMBODIED_PLATFORM_DSN set -> Postgres,
+    # unset -> JSON file). PgRepository keeps JsonRepository's read()/mutate()
+    # surface, so the JsonRepository-typed parameters below hold for either.
+    return get_repository()
 
 
 def require_write_actor(

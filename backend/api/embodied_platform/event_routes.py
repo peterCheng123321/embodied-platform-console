@@ -12,15 +12,17 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from .repository import JsonRepository
+from .repository import JsonRepository, get_repository
 from .schema import EventIngestResponse, LabelEventBatch, TelemetryEventBatch, now_iso
 
 
 router = APIRouter(prefix="/v1/events", tags=["event-ingest"])
 
 
-def _repo() -> JsonRepository:
-    return JsonRepository()
+def _repo():
+    # Backend selected by env (XINGJU_EMBODIED_PLATFORM_DSN set -> Postgres,
+    # unset -> JSON file); both expose the same read()/mutate() surface.
+    return get_repository()
 
 
 def _stored_event(event: BaseModel) -> dict[str, Any]:
