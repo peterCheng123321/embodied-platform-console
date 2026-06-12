@@ -147,6 +147,20 @@ function handleVideoLoadError() {
     setVideoPlayerState('error', message);
 }
 
+// <source>-child failures fire 'error' at the SOURCE element, never at the
+// media element — video.error stays null and the spinner would sit forever.
+// applyEpisodeBundle() wires this for bundle clips; the demo clip (kicked off
+// by the HTML's <source> before this module ran, and re-armed on retry)
+// needs the same wiring.
+function wireDemoSourceError() {
+    const source = video.querySelector('source');
+    if (!source) return null;
+    const showDemoSourceError = () => setVideoPlayerState('error',
+        `视频文件加载失败（${videoSourceLabel()}）— 请确认演示素材仍然存在，然后重试。`);
+    source.onerror = showDemoSourceError;
+    return showDemoSourceError;
+}
+
 function retryVideoLoad() {
     setVideoPlayerState('loading');
     jklStopReverse();
@@ -168,6 +182,9 @@ function retryVideoLoad() {
     video.removeAttribute('src');
     const source = video.querySelector('source');
     if (source) source.src = videoSourcePath;
+    // Non-demo retries reach here only after a successful bundle load, whose
+    // applyEpisodeBundle() onerror is still attached to the same element.
+    if (IS_DEMO_SOURCE) wireDemoSourceError();
     video.load();
     armVideoStallFallback();
 }
@@ -281,7 +298,18 @@ let episodeSourceReady;
 if (IS_DEMO_SOURCE) {
     episodeSourceReady = Promise.resolve(null);
     // The HTML's <source> kicked off the demo clip load before this module
-    // ran — watch it for the media-stack stall too.
+    // ran — wire its failure overlay and watch it for the media-stack stall.
+    // A 404'd source leaves video.error null, so the stall timer still runs:
+    // its own fetch then 404s too and (by design) leaves the overlay alone.
+    const demoSourceError = wireDemoSourceError();
+    // A fast 404 can fire the source error BEFORE the handler above attached
+    // (the load starts at HTML parse time): NETWORK_NO_SOURCE with nothing
+    // buffered means the source list is already exhausted — show the overlay
+    // now, since no further event will fire.
+    if (demoSourceError && video.readyState === 0
+        && video.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
+        demoSourceError();
+    }
     armVideoStallFallback();
 } else {
     // Cancel the demo <source> the HTML kicked off before this module ran.
@@ -768,7 +796,7 @@ function renderPalette() {
         pill.innerHTML = `
             <span class="font-mono text-xs text-zinc-500">${idx + 1}</span>
             <span class="inline-block w-3 h-3 rounded-full" style="background:${safeCssColor(skill.color)}"></span>
-            <span>${skill.label}</span>
+            <span>${escapeHtml(skill.label)}</span>
         `;
         pill.addEventListener('click', () => setActiveSkill(skill.id));
         palette.appendChild(pill);
@@ -1529,13 +1557,26 @@ function showToast(msg, kind = 'info') {
     setTimeout(() => t.remove(), 3000);
 }
 
+// In-memory fallback when localStorage is unavailable (private mode, blocked
+// third-party storage, quota). Generated once so the id stays stable across
+// saves within the session; not persisted, so a reload rotates it.
+let inMemoryAnnotatorId = null;
+
 function getAnnotatorId() {
-    let id = localStorage.getItem('embodied.annotator_id');
-    if (!id) {
-        id = crypto.randomUUID();
-        localStorage.setItem('embodied.annotator_id', id);
+    try {
+        let id = localStorage.getItem('embodied.annotator_id');
+        if (!id) {
+            id = crypto.randomUUID();
+            localStorage.setItem('embodied.annotator_id', id);
+        }
+        return id;
+    } catch (e) {
+        if (!inMemoryAnnotatorId) {
+            inMemoryAnnotatorId = crypto.randomUUID();
+            console.warn('embodied.js: localStorage unavailable — using in-memory annotator id for this session', e);
+        }
+        return inMemoryAnnotatorId;
     }
-    return id;
 }
 
 // Raw commit — always invoked through the commitSegment() wrapper below,
@@ -2126,8 +2167,18 @@ async function saveAll({ auto = false } = {}) {
     }
     try {
         if (state.storageMode === 'local') {
-            saveSegmentsLocal(segments, annotator_id);
-            markLocalPendingSync(annotator_id, segments.length);
+            try {
+                saveSegmentsLocal(segments, annotator_id);
+                markLocalPendingSync(annotator_id, segments.length);
+            } catch (storageErr) {
+                // Quota-full/blocked localStorage: the in-memory segments are
+                // now the only copy — surface loudly and KEEP dirty so the
+                // badge keeps nagging. finally below still restores the button.
+                console.error('saveAll: local storage write failed:', storageErr);
+                showToast('本地存储不可用 — 标注未能保存，请导出或检查浏览器存储设置', 'error');
+                if (auto) dirtyBadge.innerHTML = DIRTY_BADGE_DEFAULT_HTML;
+                return;
+            }
             if (!auto) showToast(`已保存 ${segments.length} 个片段到本地演示`, 'success');
             if (state.saveEpoch === epoch) {
                 setDirty(false);
@@ -2190,8 +2241,19 @@ async function saveAll({ auto = false } = {}) {
             scheduleAutoSave();
         }
     } catch (e) {
-        saveSegmentsLocal(segments, annotator_id);
-        markLocalPendingSync(annotator_id, segments.length);
+        try {
+            saveSegmentsLocal(segments, annotator_id);
+            markLocalPendingSync(annotator_id, segments.length);
+        } catch (storageErr) {
+            // Backend down AND localStorage unwritable: nothing persisted.
+            // A rethrow here would escape saveAll as an unhandled rejection —
+            // contain it, keep dirty, and don't claim the browser holds a copy.
+            console.error('saveAll: local fallback write failed:', storageErr);
+            setStorageMode('local', '本地演示模式 · 后端不可用，本地存储写入失败');
+            showToast('本地存储不可用 — 标注未能保存，请导出或检查浏览器存储设置', 'error');
+            if (auto) dirtyBadge.innerHTML = DIRTY_BADGE_DEFAULT_HTML;
+            return;
+        }
         setStorageMode('local', '本地演示模式 · 后端不可用，片段保存在浏览器');
         if (auto) {
             dirtyBadge.innerHTML = DIRTY_BADGE_DEFAULT_HTML;
@@ -2218,10 +2280,15 @@ async function loadExisting() {
     const annotator_id = getAnnotatorId();
     const localPendingSync = hasLocalPendingSync(annotator_id);
     setStorageMode('checking', '检查后端同步');
+    // A hung GET must not park the badge on 检查后端同步 forever — abort after
+    // 10s so the catch path's local-mode fallback takes over.
+    const abort = new AbortController();
+    const abortTimer = setTimeout(() => abort.abort(), 10000);
     try {
         const r = await fetch(`${API_BASE}/api/embodied/segments?episode_id=${EPISODE_ID}&annotator_id=${annotator_id}`, {
             // Defense-in-depth: server requires header == query annotator_id.
             headers: { 'X-Annotator-Id': annotator_id },
+            signal: abort.signal,
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         // Optimistic-concurrency token: remember the version we just read so
@@ -2241,6 +2308,14 @@ async function loadExisting() {
             showToast(`已恢复 ${localSegments.length} 个待同步本地片段，正在同步后端`, 'info');
             return;
         }
+        if (state.dirty) {
+            // The user marked segments while the GET was in flight — keep the
+            // local working copy instead of clobbering it. The etag captured
+            // above lets the already-armed auto-save land it on the backend.
+            setStorageMode('backend', '后端同步已连接');
+            showToast('已保留本地未保存标注（服务器副本未覆盖）', 'info');
+            return;
+        }
         // Tag each loaded segment with a fresh client id (server doesn't track ids)
         state.segments = segs.map(s => ({ ...s, id: state.nextId++ }));
         renderLanes();
@@ -2249,6 +2324,13 @@ async function loadExisting() {
         setStorageMode('backend', '后端同步已连接');
         if (segs.length) showToast(`已加载 ${segs.length} 个保存的片段`);
     } catch (e) {
+        if (state.dirty) {
+            // Same in-flight-edit guard as the success path: the stored local
+            // copy must not overwrite fresh marks, nor clear their dirty flag.
+            setStorageMode('local', '本地演示模式 · 片段保存在浏览器');
+            showToast('已保留本地未保存标注（服务器副本未覆盖）', 'info');
+            return;
+        }
         const segs = loadSegmentsLocal(annotator_id);
         state.segments = segs.map(s => ({ ...s, id: state.nextId++ }));
         renderLanes();
@@ -2256,6 +2338,8 @@ async function loadExisting() {
         setDirty(false);
         setStorageMode('local', '本地演示模式 · 片段保存在浏览器');
         if (segs.length) showToast(`已加载 ${segs.length} 个本地演示片段`);
+    } finally {
+        clearTimeout(abortTimer);
     }
 }
 
@@ -2411,16 +2495,23 @@ function undo() {
 
 document.addEventListener('keydown', (e) => {
     if (isEditableTarget(e)) return;
-    // Focused <button> keeps native Space/Enter activation for Tab-nav users —
-    // JKL and the edit hotkeys must not steal keys over it (seg-list row idiom).
-    if (e.target && typeof e.target.closest === 'function' && e.target.closest('button')) return;
-    // ? toggles overlay. Note: Shift+/ produces "?" on US keyboards.
+    // ? (Shift+/ on US keyboards) toggles the overlay; Escape closes it.
+    // Handled BEFORE the button-focus guard below so both keep working while
+    // a button holds focus — neither collides with native Space/Enter
+    // activation.
     if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         e.preventDefault();
         helpOverlay.classList.toggle('hidden');
-    } else if (e.key === 'Escape') {
+        return;
+    }
+    if (e.key === 'Escape') {
         helpOverlay.classList.add('hidden');
-    } else if (e.key === 'q' || e.key === 'Q') {
+        return;
+    }
+    // Focused <button> keeps native Space/Enter activation for Tab-nav users —
+    // JKL and the edit hotkeys must not steal keys over it (seg-list row idiom).
+    if (e.target && typeof e.target.closest === 'function' && e.target.closest('button')) return;
+    if (e.key === 'q' || e.key === 'Q') {
         e.preventDefault(); jumpSegment(-1);
     } else if (e.key === 'e' || e.key === 'E') {
         e.preventDefault(); jumpSegment(1);

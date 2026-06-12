@@ -24,15 +24,28 @@ export function initCmdk(commands) {
     input.placeholder = '输入命令或回合编号… (EP 42 ⏎ 跳转)';
     input.setAttribute('aria-label', '命令输入');
     const list = el('div', 'console-cmdk-list');
+    list.setAttribute('role', 'listbox');
+    list.tabIndex = -1;   // programmatically focusable target for the Tab trap
     panel.append(input, list);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
 
     let items = [];
     let selected = 0;
+    let lastFocused = null;   // element to restore focus to on close
 
-    function close() { overlay.classList.add('hidden'); input.value = ''; }
-    function open() { overlay.classList.remove('hidden'); input.value = ''; refresh(); input.focus(); }
+    function close() {
+        overlay.classList.add('hidden');
+        input.value = '';
+        if (lastFocused && document.contains(lastFocused) && typeof lastFocused.focus === 'function') {
+            lastFocused.focus();
+        }
+        lastFocused = null;
+    }
+    function open() {
+        lastFocused = document.activeElement;
+        overlay.classList.remove('hidden'); input.value = ''; refresh(); input.focus();
+    }
 
     function refresh() {
         const q = input.value.trim().toLowerCase();
@@ -59,6 +72,12 @@ export function initCmdk(commands) {
         }
         if (overlay.classList.contains('hidden')) return;
         if (e.key === 'Escape') { e.preventDefault(); close(); }
+        else if (e.key === 'Tab') {
+            // Trap focus inside the palette while open: cycle input ↔ list
+            // instead of tabbing into the page underneath the overlay.
+            e.preventDefault();
+            (document.activeElement === input ? list : input).focus();
+        }
         else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
             selected = Math.max(0, Math.min(items.length - 1, selected + (e.key === 'ArrowDown' ? 1 : -1)));
