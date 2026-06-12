@@ -1026,6 +1026,41 @@ function renderCollection(data) {
   }));
 }
 
+// index.html ships the offline fixtures' identifiers as reference-field defaults;
+// against the live backend those records don't exist, so first writes 422 until the
+// operator hand-edits the field. Tracks the last value applied per field so loaded
+// state can replace an untouched default without ever clobbering a user edit.
+const referenceFieldDefaults = {
+  'training-dataset': 'warehouse-pick-v1',
+  'simulation-model': 'demo-model',
+  'deployment-model': 'demo-model',
+  'learning-episode': 'episode-000042',
+};
+
+function syncReferenceField(fieldId, identifier) {
+  if (!identifier) return;
+  const input = document.getElementById(fieldId);
+  if (!input || (input.value !== '' && input.value !== referenceFieldDefaults[fieldId])) return;
+  input.value = identifier;
+  referenceFieldDefaults[fieldId] = identifier;
+}
+
+function syncReferenceFieldDefaults(data) {
+  // Backend reference checks accept datasets by id/name, models by id/name/version,
+  // episodes by id/episode_id. Prefer the identifier the tables surface (dataset
+  // name, episode_id); models use id, which stays unambiguous across versions.
+  // No matching records (e.g. degraded live) -> keep the current default.
+  const [dataset] = data.datasets;
+  const [model] = data.models;
+  const [episode] = data.episodes || [];
+  if (dataset) syncReferenceField('training-dataset', dataset.name || dataset.id);
+  if (model) {
+    syncReferenceField('simulation-model', model.id);
+    syncReferenceField('deployment-model', model.id);
+  }
+  if (episode) syncReferenceField('learning-episode', episode.episode_id || episode.id);
+}
+
 function renderAll() {
   if (!state.data) return;
   const data = state.data;
@@ -1098,6 +1133,7 @@ function renderAll() {
     state.live ? 'API' : '演示数据',
     tag('set'),
   ]));
+  syncReferenceFieldDefaults(data);
   syncWriteControls();
   updateModeBanner();
 }
