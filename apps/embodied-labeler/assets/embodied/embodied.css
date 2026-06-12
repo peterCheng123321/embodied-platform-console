@@ -1,22 +1,59 @@
 /* Custom styles for the embodied labeler page beyond Tailwind utilities. */
 
 :root {
+    /* === XINGJU instrument-grammar tokens (spec 2026-06-12 §1–§3) === */
+    /* Corners — one 3-step radius scale */
+    --r-1: 4px;
+    --r-2: 8px;
+    --r-full: 999px;
+    /* Motion — tokenized; one decelerate curve everywhere */
+    --motion-fast: 120ms;
+    --motion-base: 180ms;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+    /* Edges — hairline-first elevation (light-ground values; .console re-binds) */
+    --edge: rgba(13, 79, 74, 0.14);
+    --edge-strong: rgba(13, 79, 74, 0.26);
+    /* The only shadow in the system — floating layers ONLY (palette, toasts,
+       dialogs, hover previews). Surfaces stay shadowless (chassis law). */
+    --overlay-shadow: 0 12px 32px rgba(22, 32, 31, 0.16);
+    /* Status — data colors, never chrome (spec §0) */
+    --st-ok: #1f7a6b;
+    --st-warn: #b56b00;
+    --st-danger: #d92d20;
+    --st-info: #0d6e8a;
+    --st-neutral: #64748b;
+
     --ds-canvas: #fcfcfd;
     --ds-surface: #ffffff;
     --ds-surface-sunk: #f6f7f7;
-    --ds-line: rgba(13, 79, 74, 0.14);
-    --ds-line-strong: rgba(13, 79, 74, 0.26);
+    --ds-line: var(--edge);
+    --ds-line-strong: var(--edge-strong);
     --ds-ink: #16201f;
     --ds-ink-soft: #5e6e6b;
     --ds-ink-faint: #8a9996;
     --ds-brand: #0d4f4a;
     --ds-brand-strong: #0a3d39;
     --ds-brand-tint: rgba(13, 79, 74, 0.055);
+    /* ink atop a --ds-brand fill; dark ground re-binds (pale brand needs dark ink) */
+    --ds-ink-on-brand: #ffffff;
     --ds-accent: #ff5a36;
     --ds-accent-tint: rgba(255, 90, 54, 0.10);
     --ds-shadow: 0 1px 2px rgba(16, 32, 31, 0.05);
     --ds-shadow-strong: 0 18px 45px rgba(16, 32, 31, 0.12);
 }
+
+/* §3 — reduced motion collapses both motion tokens app-wide */
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --motion-fast: 1ms;
+        --motion-base: 1ms;
+    }
+}
+
+/* §1 — Tailwind radius classes compute to the token scale inside the app's own
+   scope (do not rewrite HTML classes wholesale). rounded-full stays full. */
+.embodied-page .rounded { border-radius: var(--r-1); }
+.embodied-page .rounded-md { border-radius: var(--r-2); }
 
 .embodied-page,
 .embodied-page * {
@@ -43,7 +80,7 @@
     align-items: center;
     justify-content: center;
     border: 1px solid var(--ds-line);
-    border-radius: 0.5rem;
+    border-radius: var(--r-2);
     background: var(--ds-surface);
     color: var(--ds-brand);
 }
@@ -55,18 +92,26 @@
 }
 
 
-.embodied-shortcut-panel kbd,
-#save-hint kbd,
-#segment-list kbd,
-#segment-status kbd {
+/* §5 kbd hints — mono, 11px, --r-1, 1px edge, never bold. box-shadow:none kills
+   the Tailwind ring-* utilities on inline kbds (JS-generated ones included) so
+   the 1px edge is the single border. */
+.embodied-page kbd {
     border: 1px solid var(--ds-line);
-    border-radius: 0.35rem;
+    border-radius: var(--r-1);
     background: var(--ds-surface-sunk);
-    color: var(--ds-brand-strong);
+    color: var(--ds-ink-soft);
     font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.74em;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 400;
     padding: 0.12rem 0.35rem;
+    box-shadow: none !important;
+}
+
+/* kbd atop the record-filled mark-end button: white-tint edge stays legible */
+.embodied-page #btn-mark-end kbd {
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
 }
 
 
@@ -110,7 +155,7 @@
     align-items: center;
     gap: 0.35rem;
     border: 1px solid var(--ds-line);
-    border-radius: 999px;
+    border-radius: var(--r-full);
     padding: 0 0.65rem;
     background: var(--ds-surface-sunk);
     color: var(--ds-ink-soft);
@@ -217,7 +262,7 @@
 .embodied-storage-badge {
     min-width: 0;
     border: 1px solid var(--ds-line);
-    border-radius: 0.625rem;
+    border-radius: var(--r-1);
     background: var(--ds-surface-sunk);
 }
 
@@ -325,7 +370,7 @@
 #label-schema-select {
     min-height: 2.25rem;
     border: 1px solid var(--ds-line);
-    border-radius: 0.5rem;
+    border-radius: var(--r-2);
     background: var(--ds-surface);
     color: var(--ds-ink);
     font-size: 0.82rem;
@@ -333,7 +378,8 @@
 }
 
 #label-schema-select:focus-visible {
-    outline: 2px solid rgba(13, 79, 74, 0.28);
+    border-color: var(--ds-line-strong);
+    outline: 2px solid var(--ds-accent);
     outline-offset: 2px;
 }
 
@@ -395,7 +441,9 @@
     height: 1.1rem;
     border: 2px solid rgba(13, 79, 74, 0.18);
     border-top-color: var(--ds-brand);
-    border-radius: 999px;
+    border-radius: var(--r-full);
+    /* functional rotation stays linear — the decelerate curve is for state
+       changes, not continuous spinners */
     animation: spin 0.8s linear infinite;
 }
 
@@ -450,10 +498,11 @@
     max-width: calc(100% - 1.5rem);
     padding: 0.4rem 0.65rem;
     border: 1px solid rgba(13, 79, 74, 0.18);
-    border-radius: 999px;
+    border-radius: var(--r-full);
     background: rgba(255, 255, 255, 0.86);
     color: var(--ds-ink-soft);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.10);
+    /* hairline-first: status chip over video carries no decorative shadow (§2) */
+    box-shadow: none;
     font-size: 0.72rem;
     backdrop-filter: blur(8px);
 }
@@ -498,37 +547,52 @@
     margin-left: auto;
 }
 
+/* §5 transport — the play circle is --r-full and record-colored; 44px is the
+   §4 anatomy exception shared with the primary mark action. No glow (§2). */
 #btn-play {
-    width: 2.85rem !important;
-    height: 2.85rem !important;
+    width: 2.75rem !important;
+    height: 2.75rem !important;
     border: 0;
-    border-radius: 999px;
-    background: var(--ds-brand) !important;
+    border-radius: var(--r-full);
+    background: var(--ds-accent) !important;
     color: #fff !important;
-    box-shadow: 0 8px 20px rgba(13, 79, 74, 0.20) !important;
+    box-shadow: none !important;
 }
 
+#btn-play:hover {
+    background: color-mix(in srgb, var(--ds-accent) 94%, #000) !important;
+}
+
+/* §5 — frame-stepper group shares one hairline border with internal separators */
 .embodied-frame-stepper {
     display: inline-flex;
     overflow: hidden;
     border: 1px solid var(--ds-line);
-    border-radius: 0.5rem;
+    border-radius: var(--r-2);
     background: var(--ds-surface-sunk);
 }
 
+/* §4 anatomy — 36px controls; the primary mark actions get the 44px exception
+   below. box-shadow:none retires the Tailwind glow/ring utilities (§2). */
 .embodied-frame-stepper button,
 #btn-loop,
-#btn-mark-start,
-#btn-mark-end,
 #save-btn,
 #reset-demo {
-    min-height: 2.55rem;
-    border-radius: 0.5rem;
+    min-height: 2.25rem;
+    border-radius: var(--r-2);
+    box-shadow: none !important;
+}
+
+#btn-mark-start,
+#btn-mark-end {
+    min-height: 2.75rem;
+    border-radius: var(--r-2);
     box-shadow: none !important;
 }
 
 .timeline-focus-pulse {
-    animation: timeline-focus-pulse 760ms ease-out;
+    /* lane interaction keeps its timing, adopts the system curve (§3) */
+    animation: timeline-focus-pulse 760ms var(--ease);
 }
 
 @keyframes timeline-focus-pulse {
@@ -568,9 +632,9 @@
     display: inline-flex;
     align-items: baseline;
     gap: 0.35rem;
-    min-height: 2.55rem;
+    min-height: 2.25rem;
     border: 1px solid var(--ds-line);
-    border-radius: 0.5rem;
+    border-radius: var(--r-2);
     padding: 0 0.75rem;
     background: var(--ds-surface);
     font-family: "IBM Plex Mono", ui-monospace, monospace;
@@ -591,10 +655,10 @@
 #playback-rate,
 #btn-loop {
     display: inline-flex;
-    min-height: 2.55rem;
+    min-height: 2.25rem;
     align-items: center;
     border: 1px solid var(--ds-line) !important;
-    border-radius: 0.5rem !important;
+    border-radius: var(--r-2) !important;
     background: var(--ds-surface-sunk) !important;
     color: var(--ds-ink-soft) !important;
     box-shadow: none !important;
@@ -623,21 +687,59 @@
     padding: 0 0.85rem !important;
 }
 
-#btn-mark-start,
-#btn-mark-end,
+/* === §4 button intents ===================================================
+   标记起点 Mark start → secondary: transparent ground, 1px --edge-strong, ink.
+   The JS-applied inline border-left (4px skill color) and icon tint stay —
+   they are data, not chrome.
+   标记终点 Mark end → record: filled --ds-accent, white ink (labeler-exclusive;
+   the pulsing dot lives in this intent's status banner).
+   保存全部 Save all → primary: filled --ds-brand. Ink is the ground-dependent
+   --ds-ink-on-brand token: white on the light ground's deep teal, near-black on
+   the console ground where --ds-brand re-binds to a pale neutral. */
+#btn-mark-start {
+    margin-left: 0 !important;
+    border: 1px solid var(--ds-line-strong) !important;
+    background: transparent !important;
+    color: var(--ds-ink) !important;
+}
+
+#btn-mark-start:hover {
+    background: var(--ds-brand-tint) !important;
+}
+
+#btn-mark-end {
+    border: 1px solid var(--ds-accent) !important;
+    background: var(--ds-accent) !important;
+    color: #fff !important;
+}
+
+#btn-mark-end:hover {
+    background: color-mix(in srgb, var(--ds-accent) 94%, #000) !important;
+}
+
+#btn-mark-end i {
+    color: #fff !important;
+}
+
 #save-btn {
     border: 1px solid var(--ds-brand) !important;
     background: var(--ds-brand) !important;
-    color: #fff !important;
+    color: var(--ds-ink-on-brand) !important;
 }
 
-#btn-mark-start {
-    margin-left: 0 !important;
+#save-btn:hover {
+    background: color-mix(in srgb, var(--ds-brand) 94%, #000) !important;
 }
 
-#btn-mark-start i,
-#btn-mark-end i {
-    color: #fff !important;
+/* §4 states — press settles 0.5px + 6% darker; disabled = 45% ink, inert */
+.embodied-page button:not(:disabled):active {
+    transform: translateY(0.5px);
+    filter: brightness(0.94);
+}
+
+.embodied-page button:disabled {
+    opacity: 0.45;
+    pointer-events: none;
 }
 
 #segment-status {
@@ -678,13 +780,13 @@
    (per-frame translateX) is not overridden. */
 #scrub-bar:hover #scrub-head {
     scale: 1.1;
-    transition: scale 0.12s ease;
+    transition: scale var(--motion-fast) var(--ease);
 }
 
 #scrub-preview {
     border-color: var(--ds-line-strong) !important;
     background-color: var(--ds-surface) !important;
-    box-shadow: var(--ds-shadow-strong) !important;
+    box-shadow: var(--overlay-shadow) !important;
 }
 
 #gold-lane,
@@ -735,19 +837,24 @@
     gap: 0.55rem !important;
 }
 
+/* §5 skill chips — --r-1; hover ground tint; selected = --edge-strong + brand
+   tint. Numbered kbd hint and the color dot stay (data, not chrome). */
 .skill-pill {
     min-height: 2.75rem;
     justify-content: flex-start;
     border: 1px solid var(--ds-line) !important;
-    border-radius: 0.625rem !important;
+    border-radius: var(--r-1) !important;
     background: var(--ds-surface-sunk) !important;
     color: var(--ds-ink) !important;
 }
 
-.skill-pill.active {
-    border-color: var(--ds-brand) !important;
+.skill-pill:hover {
     background: var(--ds-brand-tint) !important;
-    box-shadow: inset 3px 0 0 var(--ds-brand) !important;
+}
+
+.skill-pill.active {
+    border-color: var(--ds-line-strong) !important;
+    background: var(--ds-brand-tint) !important;
 }
 
 .skill-pill .font-mono {
@@ -766,7 +873,7 @@
 
 #segment-list > div:not(.empty-state) {
     border: 1px solid transparent;
-    border-radius: 0.625rem !important;
+    border-radius: var(--r-1) !important;
 }
 
 #segment-list > div:not(.empty-state):hover {
@@ -789,12 +896,13 @@
     width: min(100% - 2rem, 34rem);
     max-height: min(82vh, 48rem);
     overflow: auto;
-    border: 1px solid var(--ds-line);
-    border-radius: 0.75rem;
+    border: 1px solid var(--ds-line-strong);
+    border-radius: var(--r-2);
     background: var(--ds-surface);
-    box-shadow: var(--ds-shadow-strong);
+    box-shadow: var(--overlay-shadow);
     color: var(--ds-ink);
     padding: 1.25rem;
+    animation: overlay-enter var(--motion-base) var(--ease);
 }
 
 .embodied-shortcut-panel table {
@@ -809,13 +917,21 @@
     border-color: var(--ds-line) !important;
 }
 
+/* §5 toasts — surface + 1px --edge-strong, --r-2, --overlay-shadow, and a 3px
+   leading bar in the status color. Kind hooks are showToast()'s Tailwind
+   classes: bg-emerald-600 = success, bg-red-600 = error, bg-zinc-700 = info. */
 #toast-container > div {
-    border: 1px solid var(--ds-line);
-    border-radius: 0.625rem;
+    border: 1px solid var(--ds-line-strong);
+    border-left-width: 3px;
+    border-radius: var(--r-2);
     background: var(--ds-surface) !important;
     color: var(--ds-ink) !important;
-    box-shadow: var(--ds-shadow-strong);
+    box-shadow: var(--overlay-shadow) !important;
 }
+
+#toast-container > .bg-emerald-600 { border-left-color: var(--st-ok); }
+#toast-container > .bg-red-600     { border-left-color: var(--st-danger); }
+#toast-container > .bg-zinc-700    { border-left-color: var(--st-info); }
 
 @media (max-width: 900px) {
     #segments-section.embodied-segments-card {
@@ -896,43 +1012,57 @@
     }
 }
 
-/* === Skill pills === */
+/* === Skill pills — motion tokens; accent ring retired (accent is never
+       selection chrome — §0) === */
 .skill-pill {
-    transition: transform 0.12s ease, background-color 0.15s ease, box-shadow 0.15s ease;
-}
-.skill-pill:active {
-    transform: scale(0.96);
-}
-.skill-pill.active {
-    box-shadow: 0 0 0 2px #ff5a36;
+    transition: transform var(--motion-fast) var(--ease),
+                background-color var(--motion-fast) var(--ease),
+                border-color var(--motion-fast) var(--ease),
+                box-shadow var(--motion-fast) var(--ease);
 }
 .skill-pill.flash {
-    animation: pill-flash 0.24s ease-out;
+    animation: pill-flash 0.24s var(--ease);
 }
 @keyframes pill-flash {
     0% { background-color: rgba(255, 90, 54, 0.5); transform: scale(1.06); }
     100% { background-color: rgb(39, 39, 42); transform: scale(1); }
 }
 
-/* === Universal button micro-press feedback === */
-button:not(:disabled):active {
-    transform: scale(0.97);
-}
+/* === Universal button state motion — §3/§4 tokens (press handled above) === */
 button {
-    transition: transform 0.08s ease, background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+    transition: transform var(--motion-fast) var(--ease),
+                background-color var(--motion-fast) var(--ease),
+                border-color var(--motion-fast) var(--ease),
+                color var(--motion-fast) var(--ease),
+                opacity var(--motion-fast) var(--ease);
 }
 
-/* === Timeline segments === */
+/* === §5 segment rects (user lane) ==========================================
+   radius --r-1 (CSS rx tokenizes the JS-set rx="4" attribute); default 1px
+   --edge stroke; hover --edge-strong + slight brightness; selected 1.5px
+   --ds-accent stroke. The 8% accent tint over the per-skill fill uses typed
+   attr() + color-mix where supported; elsewhere the declaration drops and the
+   fill attribute (pure skill color) shows through. Drag handles have no DOM
+   hook (edge-drag is a cursor hot-zone inside the rect — embodied.js), so the
+   end affordance is carried by the stroke step-up, fading at --motion-fast. */
 .timeline-segment {
     cursor: pointer;
-    transition: opacity 0.15s ease, filter 0.15s ease;
+    rx: var(--r-1);
+    stroke: var(--ds-line);
+    stroke-width: 1;
+    transition: opacity var(--motion-fast) var(--ease),
+                filter var(--motion-fast) var(--ease),
+                stroke var(--motion-fast) var(--ease),
+                stroke-width var(--motion-fast) var(--ease);
 }
 .timeline-segment:hover {
-    filter: brightness(1.1);
+    stroke: var(--ds-line-strong);
+    filter: brightness(1.04);
 }
 .timeline-segment.selected {
-    outline: 2px solid #ff5a36;
-    outline-offset: 1px;
+    stroke: var(--ds-accent);
+    stroke-width: 1.5;
+    fill: color-mix(in srgb, var(--ds-accent) 8%, attr(fill type(<color>), currentColor));
 }
 
 /* === Segment label legibility on any skill color === */
@@ -956,15 +1086,18 @@ button {
 /* Final CRM-theme overrides after legacy utility helpers. */
 .embodied-page .skill-pill {
     border: 1px solid var(--ds-line) !important;
-    border-radius: 0.625rem !important;
+    border-radius: var(--r-1) !important;
     background: var(--ds-surface-sunk) !important;
     color: var(--ds-ink) !important;
 }
 
-.embodied-page .skill-pill.active {
-    border-color: var(--ds-brand) !important;
+.embodied-page .skill-pill:hover {
     background: var(--ds-brand-tint) !important;
-    box-shadow: inset 3px 0 0 var(--ds-brand) !important;
+}
+
+.embodied-page .skill-pill.active {
+    border-color: var(--ds-line-strong) !important;
+    background: var(--ds-brand-tint) !important;
 }
 
 .embodied-page .skill-select option {
@@ -1058,7 +1191,7 @@ button {
     height: 1.25rem;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
+    border-radius: var(--r-full);
     background: var(--ds-brand);
     color: #fff;
     font-family: "IBM Plex Mono", ui-monospace, monospace;
@@ -1078,7 +1211,7 @@ button {
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
-    border-radius: 0.55rem;
+    border-radius: var(--r-2);
     padding: 0 0.9rem;
     font-weight: 700;
 }
@@ -1096,10 +1229,13 @@ button {
     color: var(--ds-brand);
 }
 
-.embodied-empty-action:hover,
+/* §4 hover = ground-tint shift, no lift shadows (§2) */
+.embodied-empty-action:hover {
+    background: color-mix(in srgb, var(--ds-brand) 94%, #000);
+}
+
 .embodied-empty-secondary:hover {
-    transform: none;
-    box-shadow: 0 1px 2px rgba(16, 32, 31, 0.08);
+    background: var(--ds-brand-tint);
 }
 
 @media (max-width: 640px) {
@@ -1110,25 +1246,25 @@ button {
 
 /* === Status banner slide-down on appear === */
 #segment-status:not(.hidden) {
-    animation: slide-down 0.18s ease-out;
+    animation: slide-down var(--motion-base) var(--ease);
 }
 @keyframes slide-down {
     from { opacity: 0; transform: translateY(-6px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* === Toast slide-in from the right === */
+/* === Toast entrance — §3: fade + 4px rise at --motion-base === */
 #toast-container > div {
-    animation: toast-slide-in 0.2s ease-out;
+    animation: overlay-enter var(--motion-base) var(--ease);
 }
-@keyframes toast-slide-in {
-    from { opacity: 0; transform: translateX(10px); }
-    to { opacity: 1; transform: translateX(0); }
+@keyframes overlay-enter {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* === Pending segment ghost on the timeline === */
 #pending-ghost {
-    animation: ghost-fade-in 0.15s ease-out;
+    animation: ghost-fade-in var(--motion-fast) var(--ease);
 }
 @keyframes ghost-fade-in {
     from { fill-opacity: 0; }
@@ -1138,7 +1274,7 @@ button {
 /* === Scrub bar drag affordance ===
    Composited hover (box-shadow ring) instead of height transition — height
    changes trigger layout every frame while the playhead is updating. */
-#scrub-bar { transition: box-shadow 0.12s ease; }
+#scrub-bar { transition: box-shadow var(--motion-fast) var(--ease); }
 #scrub-bar:hover { box-shadow: 0 0 0 4px rgba(13, 79, 74, 0.10); }
 
 /* === Video crispness tweaks for a 320×180 source upscaled ~2.3× ===
@@ -1194,7 +1330,7 @@ button {
     #palette-section.embodied-card,
     #timeline-section.embodied-card,
     #segments-section.embodied-card {
-        animation: card-fade-up 250ms ease-out both;
+        animation: card-fade-up 250ms var(--ease) both;
     }
     #video-section.embodied-card    { animation-delay: 0ms;   }
     #palette-section.embodied-card  { animation-delay: 80ms;  }
@@ -1202,7 +1338,7 @@ button {
     /* opacity-only fade for the segments card (historically sticky; kept to
        avoid a layout-jump on load inside the inspector rail) */
     #segments-section.embodied-card {
-        animation: card-fade-in 250ms ease-out both;
+        animation: card-fade-in 250ms var(--ease) both;
         animation-delay: 240ms;
     }
 }
@@ -1226,13 +1362,14 @@ button {
     background-color: rgba(31, 122, 107, 0.15) !important;   /* teal-ok/15 */
     box-shadow: inset 0 0 0 1px rgba(31, 122, 107, 0.5) !important; /* ring teal-ok/50 */
     color: rgb(110, 231, 183) !important;                    /* emerald-300 */
-    animation: saved-pulse-fade 1.2s ease-out forwards;
+    /* save-pulse keeps its timing, adopts the system curve (§3) */
+    animation: saved-pulse-fade 1.2s var(--ease) forwards;
 }
 #dirty-badge.dirty-badge-saved .dirty-badge-saved-dot {
     display: inline-block;
     width: 0.375rem;
     height: 0.375rem;
-    border-radius: 9999px;
+    border-radius: var(--r-full);
     background-color: rgb(31, 122, 107);                     /* teal-ok */
 }
 @keyframes saved-pulse-fade {
@@ -1258,7 +1395,8 @@ button {
 .timeline-segment.just-created {
     transform-box: fill-box;        /* SVG: resolve transform-origin against rect's own bbox */
     transform-origin: left center;
-    animation: segment-reveal 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    /* lane interaction keeps its timing, adopts the system curve (§3) */
+    animation: segment-reveal 220ms var(--ease) both;
 }
 @media (prefers-reduced-motion: reduce) {
     .timeline-segment.just-created {
