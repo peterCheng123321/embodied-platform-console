@@ -1,6 +1,6 @@
 # XINGJU Unified Design Language — "Instrument Grammar" (2026-06-12)
 
-One language, two grounds. The ops console (`/app/`, light "paper" ground) and the labeler (`/labeler/`, dark "instrument" ground) keep their grounds but share every other decision: the radius scale, the edge grammar, the motion tokens, the button anatomy, and the focus/selection treatment. Detail-level spec — corners, edges, transitions, buttons, and the annotating surface — per the 2026-06-12 direction.
+One language, ONE ground (amended 2026-06-12b: the two-ground model read as two different products — both surfaces now sit on the dark "instrument" ground; the labeler's values are canonical). Both surfaces share every decision: the radius scale, the edge grammar, the motion tokens, the button anatomy, and the focus/selection treatment. Detail-level spec — corners, edges, transitions, buttons, and the annotating surface — per the 2026-06-12 direction.
 
 ## 0. Palette (already unified — unchanged)
 Brand `#0d4f4a` · brand-lum `#1f7a6b` · accent (coral) `#ff5a36` — **navigation/identity/recording only, never status** · status: ok `#1f7a6b`, warn `#b56b00`, danger `#d92d20`, info `#0d6e8a`, neutral `#64748b` · fonts IBM Plex Sans SC / IBM Plex Mono.
@@ -67,3 +67,9 @@ Loading state: spinner replaces icon, label persists, `aria-busy="true"` (matche
 
 ## Non-goals
 Light/dark theming flips, palette changes, layout/IA changes, Tailwind removal, the landing redirect stubs.
+
+
+## 7. Amendment 2026-06-12b — one dark ground + connected surfaces
+- **Platform re-ground (dark)**: `--bg #141619 · --surface #1a1d20 · --surface-2 #16191c · --surface-3 #101214 · --edge #26292e · --edge-strong #343a40 · --ink #e8ecef · --ink-muted #9aa3ab · --ink-faint #6a7178`. Brand on dark: fills stay `#1f7a6b` (white ink), luminous accents/rings `#5ec8c0` (the historical dark-scope brand). Status on dark: ok `#7ec98f`, warn `#d9a05f`, danger `#e8746a`, info `#6fb3c9`, neutral `#8a94a3`. Accent `#ff5a36` unchanged. manifest/theme-color → `#141619`.
+- **Shared app-bar**: both surfaces carry the same top-left construction — wordmark + a segmented two-item app switcher `运营台 | 标注台` (active item = current surface; the other is a real link: `/app/` ↔ `/labeler/?dataset=demo&episode=0`). The labeler chassis gains a slim 36px topbar row (hairline bottom) hosting it; the platform header hosts it next to the wordmark. One construction, both grounds — this is the connective tissue.
+- The labeler footer mode-tabs remain as secondary deep-links.
