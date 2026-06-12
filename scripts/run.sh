@@ -11,8 +11,16 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT/backend"
 
-export XINGJU_EMBODIED_PLATFORM_AUTH_SECRET="${XINGJU_EMBODIED_PLATFORM_AUTH_SECRET:-dev-change-me-secret}"
-export XINGJU_EMBODIED_PLATFORM_LOGIN_PASSCODE="${XINGJU_EMBODIED_PLATFORM_LOGIN_PASSCODE:-ground-control-dev}"
+# Secrets: respect the environment; generate an EPHEMERAL secret otherwise so
+# dev keeps working — but warn loudly, because sessions die with the process.
+if [ -z "${XINGJU_EMBODIED_PLATFORM_AUTH_SECRET:-}" ]; then
+  export XINGJU_EMBODIED_PLATFORM_AUTH_SECRET="ephemeral-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  echo "[run] WARNING: XINGJU_EMBODIED_PLATFORM_AUTH_SECRET not set — generated an ephemeral dev secret (sessions reset on restart). Set it for any real deployment." >&2
+fi
+if [ -z "${XINGJU_EMBODIED_PLATFORM_LOGIN_PASSCODE:-}" ]; then
+  export XINGJU_EMBODIED_PLATFORM_LOGIN_PASSCODE="ground-control-dev"
+  echo "[run] WARNING: using the default dev passcode 'ground-control-dev'. Set XINGJU_EMBODIED_PLATFORM_LOGIN_PASSCODE for any real deployment." >&2
+fi
 export XINGJU_EMBODIED_PLATFORM_DATA_ROOT="${XINGJU_EMBODIED_PLATFORM_DATA_ROOT:-$REPO_ROOT/backend/data/embodied_platform}"
 export XINGJU_EMBODIED_DATA_ROOT="${XINGJU_EMBODIED_DATA_ROOT:-$REPO_ROOT/backend/data/embodied}"
 export XINGJU_EMBODIED_CACHE_ROOT="${XINGJU_EMBODIED_CACHE_ROOT:-$REPO_ROOT/backend/data/embodied_cache}"
