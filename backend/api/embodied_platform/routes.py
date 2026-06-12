@@ -17,6 +17,7 @@ from .ingest import IngestError, IngestResult, parse_lerobot_root
 from .qc import DatasetNotFound, dataset_qc
 from .repository import JsonRepository, get_repository
 from .schema import (
+    AnnotationStatusUpdate,
     AnnotationTask,
     AnnotationTaskCreate,
     AttemptReview,
@@ -29,6 +30,7 @@ from .schema import (
     CollectionRun,
     CollectionRunCreate,
     CollectionRunProgress,
+    CollectionRunStatusUpdate,
     CollectionTaskProgress,
     Dataset,
     DatasetCreate,
@@ -78,6 +80,35 @@ JOB_TRANSITIONS = {
     "failed": {"queued"},
     "cancelled": {"queued"},
     "succeeded": set(),
+}
+
+# Collection-run termination table. The non-terminal statuses are DERIVED from
+# attempt progress (_progress_for_run); the only operator-settable statuses are
+# the manual terminals 'completed'/'failed', valid from any non-terminal state.
+# Unlike the job machine there is no same-status no-op: every terminal state
+# (derived 'passed' included) rejects further transitions with 409.
+COLLECTION_RUN_TRANSITIONS = {
+    "collecting": {"completed", "failed"},
+    "ready_for_review": {"completed", "failed"},
+    "blocked": {"completed", "failed"},
+    "passed": set(),
+    "completed": set(),
+    "failed": set(),
+}
+
+# Manual terminal run statuses. Attempt/review writes recompute the run status
+# from progress, which would silently resurrect a terminated run — so those
+# writes are rejected (409) while the run carries one of these.
+COLLECTION_RUN_MANUAL_TERMINAL = {"completed", "failed"}
+
+# Annotation review machine: open -> review -> accepted | rework -> review.
+# 'accepted' is terminal; there is no transition back to 'open' and no
+# same-status no-op — anything outside the table is a 409.
+ANNOTATION_TRANSITIONS = {
+    "open": {"review"},
+    "review": {"accepted", "rework"},
+    "rework": {"review"},
+    "accepted": set(),
 }
 
 # Import formats the ingest pipeline can actually parse. The ImportJobCreate
@@ -826,6 +857,36 @@ def save_annotation_task(
     return repo.mutate(_mutate)
 
 
+@router.patch("/annotation-tasks/{task_id}/status", response_model=AnnotationTask)
+def update_annotation_task_status(
+    task_id: str,
+    req: AnnotationStatusUpdate,
+    actor: dict[str, str] = Depends(annotation_actor),
+    repo: JsonRepository = Depends(_repo),
+) -> AnnotationTask:
+    """Drive an annotation task through the review machine.
+
+    open -> review -> accepted | rework, rework -> review. The AnnotationStatus
+    enum advertised these states with no implemented transition; this endpoint
+    is the explicit machine. An unknown status is a 422 (schema Literal); a
+    known status outside the table — same-status included, and anything from
+    the terminal 'accepted' — is a 409.
+    """
+    def _mutate(state: dict[str, Any]) -> AnnotationTask:
+        task = _find(state, "annotation_tasks", task_id)
+        current = str(task.get("status", "open"))
+        if req.status not in ANNOTATION_TRANSITIONS.get(current, set()):
+            raise HTTPException(
+                status_code=409,
+                detail=f"cannot transition annotation task from {current} to {req.status}",
+            )
+        task.update(status=req.status, updated_at=now_iso())
+        _append_audit(state, action="annotation.status", resource=task_id, detail=req.status, actor=actor)
+        return AnnotationTask.model_validate(task)
+
+    return repo.mutate(_mutate)
+
+
 @router.get("/collection-profiles", response_model=list[CollectionProfile])
 def list_collection_profiles(repo: JsonRepository = Depends(_repo)) -> list[dict[str, Any]]:
     return _profiles(repo.read())
@@ -868,6 +929,50 @@ def create_collection_run(
     return repo.mutate(_mutate)
 
 
+def _require_run_not_terminated(run: dict[str, Any]) -> None:
+    if run.get("status") in COLLECTION_RUN_MANUAL_TERMINAL:
+        raise HTTPException(
+            status_code=409,
+            detail=f"collection run {run.get('id')} is terminated ({run.get('status')})",
+        )
+
+
+@router.patch("/collection-runs/{run_id}/status", response_model=CollectionRun)
+def update_collection_run_status(
+    run_id: str,
+    req: CollectionRunStatusUpdate,
+    actor: dict[str, str] = Depends(annotation_actor),
+    repo: JsonRepository = Depends(_repo),
+) -> CollectionRun:
+    """Manually terminate a collection run (completed/failed).
+
+    Every other run status is derived from attempt progress, so without this
+    endpoint an abandoned run sat 'collecting' forever. The schema only admits
+    the two manual terminal targets (anything else is a 422); the transition
+    table rejects terminating an already-terminal run — derived 'passed'
+    included — with a 409, like the job machines.
+    """
+    def _mutate(state: dict[str, Any]) -> CollectionRun:
+        run = _find(state, "collection_runs", run_id)
+        current = str(run.get("status", "collecting"))
+        if req.status not in COLLECTION_RUN_TRANSITIONS.get(current, set()):
+            raise HTTPException(
+                status_code=409,
+                detail=f"cannot transition collection run from {current} to {req.status}",
+            )
+        run.update(status=req.status, updated_at=now_iso())
+        _append_audit(
+            state,
+            action=f"collection.run.{req.status}",
+            resource=run_id,
+            detail=req.reason,
+            actor=actor,
+        )
+        return CollectionRun.model_validate(run)
+
+    return repo.mutate(_mutate)
+
+
 @router.post("/collection-runs/{run_id}/attempts", response_model=CollectionAttempt)
 def create_collection_attempt(
     run_id: str,
@@ -877,6 +982,9 @@ def create_collection_attempt(
 ) -> CollectionAttempt:
     def _mutate(state: dict[str, Any]) -> CollectionAttempt:
         run = _find(state, "collection_runs", run_id)
+        # A manually-terminated run is closed: a new attempt would recompute the
+        # run status from progress and silently resurrect it.
+        _require_run_not_terminated(run)
         profile = _profile_by_id(state, run["profile_id"])
         task = next((task for task in profile.tasks if task.task_id == req.task_id), None)
         if not task:
@@ -915,6 +1023,10 @@ def review_collection_attempt(
 ) -> CollectionAttempt:
     def _mutate(state: dict[str, Any]) -> CollectionAttempt:
         attempt = _find(state, "collection_attempts", attempt_id)
+        # A manually-terminated run is closed: reviewing one of its attempts
+        # would recompute the run status from progress and silently resurrect it.
+        run = _find(state, "collection_runs", attempt["run_id"])
+        _require_run_not_terminated(run)
         profile = _profile_by_id(state, attempt["profile_id"])
         allowed_issue_codes = {issue.id for issue in profile.issue_codes}
         bad_codes = [code for code in req.issue_codes if code not in allowed_issue_codes]
@@ -932,7 +1044,6 @@ def review_collection_attempt(
             attempt["status"] = "rejected"
         else:
             attempt["status"] = "rework"
-        run = _find(state, "collection_runs", attempt["run_id"])
         progress = _progress_for_run(state, run)
         run.update(status=progress.status, updated_at=now_iso())
         _append_audit(state, action="collection.review", resource=attempt_id, detail=req.decision, actor=actor)

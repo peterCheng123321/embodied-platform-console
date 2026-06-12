@@ -13,7 +13,11 @@ JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 AnnotationStatus = Literal["open", "review", "accepted", "rework"]
 DeploymentStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 LearningPriority = Literal["low", "normal", "high", "urgent"]
-CollectionRunStatus = Literal["not_started", "collecting", "ready_for_review", "passed", "failed", "blocked"]
+# 'collecting'/'ready_for_review'/'passed'/'blocked' are DERIVED from attempt
+# progress; 'completed'/'failed' are set only by the manual termination PATCH
+# (/collection-runs/{run_id}/status). 'not_started' was removed: no code path
+# ever produced it (runs are created 'collecting') and no fixture carries it.
+CollectionRunStatus = Literal["collecting", "ready_for_review", "passed", "completed", "failed", "blocked"]
 CollectionAttemptStatus = Literal[
     "draft",
     "recorded",
@@ -119,6 +123,13 @@ class StatusUpdate(StrictModel):
     message: str | None = Field(default=None, max_length=500)
 
 
+class AnnotationStatusUpdate(StrictModel):
+    """PATCH /annotation-tasks/{task_id}/status body. An unknown status is a
+    422 at the boundary; the route enforces the transition table (409)."""
+
+    status: AnnotationStatus
+
+
 class AnnotationLabel(StrictModel):
     start_frame: int = Field(ge=0)
     end_frame: int = Field(ge=0)
@@ -204,6 +215,15 @@ class CollectionRun(CollectionRunCreate):
     status: CollectionRunStatus = "collecting"
     created_at: str
     updated_at: str
+
+
+class CollectionRunStatusUpdate(StrictModel):
+    """PATCH /collection-runs/{run_id}/status body. Only the two manual
+    terminal statuses are settable — the rest of CollectionRunStatus is derived
+    from attempt progress, so requesting one of those is a 422 at the boundary."""
+
+    status: Literal["completed", "failed"]
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class CollectionAttemptCreate(StrictModel):
