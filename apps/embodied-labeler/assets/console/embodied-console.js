@@ -17,27 +17,57 @@ function gotoEpisode(ds, ix) {
     window.location.href = dest.toString();   // full navigation; beforeunload guards dirty work
 }
 
+// 10s-capped fetch: one hung dataset request must not stall the tree (and the
+// palette's episode index) forever. Timeouts surface as rejections in the
+// callers' existing catch paths.
+async function fetchWithTimeout(url, opts = {}, ms = 10000) {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), ms);
+    try {
+        return await fetch(url, { ...opts, signal: abort.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Same toast idiom as embodied.js showToast (not exported there); the labeler
+// page always carries #toast-container.
+function toast(msg) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const t = document.createElement('div');
+    t.className = 'bg-zinc-700 text-white text-sm px-4 py-2 rounded shadow-lg';
+    t.textContent = msg;
+    container.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
 let episodeEntries = [];   // flat [{ds, ix, task, annotated}] for palette jumps
 
 async function loadTree() {
     const container = document.getElementById('episode-tree');
     if (!container) return;
     try {
-        const r = await fetch(`${API_BASE}/api/embodied/datasets`);
+        const r = await fetchWithTimeout(`${API_BASE}/api/embodied/datasets`);
         if (!r.ok) return;
         const datasets = await r.json();
         const groups = [];
         for (const ds of datasets) {
             let eps = [];
+            let failed = false;
             try {
-                const er = await fetch(`${API_BASE}/api/embodied/datasets/${encodeURIComponent(ds.id)}/episodes`);
+                // Per-dataset isolation: one unreadable or HANGING dataset
+                // (10s cap above) must not hide — or stall — the rest. A
+                // failure renders the node with a 加载失败 marker instead.
+                const er = await fetchWithTimeout(`${API_BASE}/api/embodied/datasets/${encodeURIComponent(ds.id)}/episodes`);
                 if (er.ok) eps = await er.json();
-            } catch (e) { /* one unreadable dataset must not hide the rest */ }
+                else failed = true;
+            } catch (e) { failed = true; }
             episodeEntries.push(...eps.map((ep) => ({ ds: ds.id, ix: ep.episode_index, task: ep.task || '', annotated: !!ep.has_annotations })));
             groups.push({
                 id: ds.id,
                 label: ds.label || ds.id,
-                meta: String(ds.episode_count ?? eps.length),
+                meta: failed ? '加载失败' : String(ds.episode_count ?? eps.length),
                 children: eps.map((ep) => ({
                     id: `${ds.id}:${ep.episode_index}`,
                     label: `ep ${ep.episode_index}`,
@@ -79,7 +109,18 @@ initCmdk([
                 const targetDs = CURRENT_DS !== 'demo' ? CURRENT_DS
                     : (episodeEntries.find((e) => e.ds !== 'demo')?.ds || CURRENT_DS);
                 // demo has exactly one episode; don't emit a misleading ?episode=N URL
-                return gotoEpisode(targetDs, targetDs === 'demo' ? 0 : parseInt(m[1], 10));
+                const ix = targetDs === 'demo' ? 0 : parseInt(m[1], 10);
+                // Validate against the loaded tree before navigating — a full
+                // page navigation to a nonexistent episode dead-ends on the
+                // labeler's error overlay. When the dataset's episode list
+                // never loaded (backend down / 加载失败) we can't know better,
+                // so keep the old navigate-and-surface-it-there behavior.
+                const dsLoaded = episodeEntries.some((e) => e.ds === targetDs);
+                if (dsLoaded && !episodeEntries.some((e) => e.ds === targetDs && e.ix === ix)) {
+                    toast(`回合不存在：${targetDs} 没有 ep ${ix}`);
+                    return;
+                }
+                return gotoEpisode(targetDs, ix);
             }
             const hit = episodeEntries.find((e) => `${e.ds} ${e.task}`.toLowerCase().includes(q));
             if (hit) gotoEpisode(hit.ds, hit.ix);

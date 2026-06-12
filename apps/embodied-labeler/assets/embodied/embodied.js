@@ -34,6 +34,20 @@ const API_BASE = document.querySelector('meta[name="api-base"]')?.content?.trim(
 // derive an id matching the backend's ^[A-Za-z0-9_-]+$ episode_id pattern.
 const EPISODE_ID = IS_DEMO_SOURCE ? 'demo_episode' : `${DATASET_ID}_ep${EPISODE_INDEX}`;
 
+// Shared fetch-with-timeout. Every network call in this module must be able
+// to FAIL — a hung request (sleeping backend, broken proxy) otherwise parks
+// its caller's UI state forever with no error and no retry affordance. The
+// abort surfaces as a rejection in each caller's existing catch path.
+async function fetchWithTimeout(url, opts = {}, ms = 10000) {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), ms);
+    try {
+        return await fetch(url, { ...opts, signal: abort.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 const video = document.getElementById('video');
 const videoFrame = document.getElementById('video-frame');
 const videoLoading = document.getElementById('video-loading');
@@ -211,7 +225,7 @@ function armVideoStallFallback() {
         if (video.currentSrc && video.currentSrc.startsWith('blob:')) return;
         try {
             if (blobFallbackFor !== want) {
-                const r = await fetch(want);
+                const r = await fetchWithTimeout(want);
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 const blob = await r.blob();
                 if (videoSourcePath !== want) return;      // raced a source swap
@@ -276,7 +290,7 @@ let episodeSourceFailed = false;
 // Called once at startup and again from retryVideoLoad() after a failure.
 async function fetchEpisodeBundle() {
     try {
-        const r = await fetch(`${API_BASE}/api/embodied/datasets/${encodeURIComponent(DATASET_ID)}/episodes/${EPISODE_INDEX}`);
+        const r = await fetchWithTimeout(`${API_BASE}/api/embodied/datasets/${encodeURIComponent(DATASET_ID)}/episodes/${EPISODE_INDEX}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const bundle = await r.json();
         episodeSourceFailed = false;
@@ -415,7 +429,17 @@ video.addEventListener('pause', () => {
     if (jklState?.mode !== 'rev') syncPlayButton(false);
 });
 video.addEventListener('ended', () => syncPlayButton(false));
-video.addEventListener('error', handleVideoLoadError);
+video.addEventListener('error', () => {
+    // A blob fallback that itself errors is known-bad bytes — invalidate the
+    // cache so the next retry / stall-rescue refetches the clip instead of
+    // replaying the same broken blob forever.
+    if (video.currentSrc && video.currentSrc.startsWith('blob:')) {
+        if (blobFallbackUrl) URL.revokeObjectURL(blobFallbackUrl);
+        blobFallbackUrl = null;
+        blobFallbackFor = null;
+    }
+    handleVideoLoadError();
+});
 videoRetry?.addEventListener('click', retryVideoLoad);
 setVideoPlayerState(video.readyState >= 1 ? 'ready' : 'loading');
 
@@ -556,6 +580,14 @@ video.addEventListener('timeupdate', () => {
     if (!sel) return;
     const endTime = timeOfFrame(sel.end_frame);
     const startTime = timeOfFrame(sel.start_frame);
+    // Degenerate segment (e.g. legacy localStorage rows beyond the clip): a
+    // snap target at/after the clip end — or a start at/after its own end —
+    // re-seeks on every timeupdate forever. Kill the loop instead of letting
+    // it self-sustain.
+    if (startTime >= video.duration || startTime >= endTime) {
+        setLoop(false);
+        return;
+    }
     if (video.currentTime >= endTime || video.currentTime < startTime - 0.05) {
         video.currentTime = startTime;
     }
@@ -756,7 +788,7 @@ function setLabelSchema(schemaId, { persist = true, refresh = true } = {}) {
 
 async function loadLabelSchemas(preferredSchemaId = '') {
     try {
-        const r = await fetch('assets/embodied/label_schemas.json');
+        const r = await fetchWithTimeout('assets/embodied/label_schemas.json');
         if (r.ok) {
             const payload = await r.json();
             const normalized = normalizeLabelSchemas(payload);
@@ -1077,7 +1109,7 @@ async function loadEpisodeMeta() {
     try {
         let meta;
         if (IS_DEMO_SOURCE) {
-            const r = await fetch('assets/embodied/episode_meta.json');
+            const r = await fetchWithTimeout('assets/embodied/episode_meta.json');
             if (!r.ok) return null;
             meta = await r.json();
         } else {
@@ -1130,7 +1162,7 @@ async function loadGold() {
     try {
         let golds;
         if (IS_DEMO_SOURCE) {
-            const r = await fetch('assets/embodied/gold_segments.json');
+            const r = await fetchWithTimeout('assets/embodied/gold_segments.json');
             if (!r.ok) return;
             golds = await r.json();
         } else {
@@ -1277,7 +1309,7 @@ async function loadGripper() {
             // as the demo gripper trace.
             url = apiUrl(bundle.proprio_url);
         }
-        const r = await fetch(url);
+        const r = await fetchWithTimeout(url);
         if (!r.ok) throw new Error('fetch failed');
         const arr = await r.json();
         renderGripper(arr);
@@ -1879,8 +1911,16 @@ function _createSegmentRow(seg) {
             const s = _segByRow(row);
             if (!s) return;
             const field = inp.dataset.field;
-            const val = parseInt(inp.value, 10);
+            let val = parseInt(inp.value, 10);
             if (isNaN(val) || val < 0) { inp.value = s[field]; return; }
+            // Clamp to the clip's frame range — same upper bound nudgeEdge
+            // enforces. An unclamped end/start beyond the clip makes the QA
+            // loop's snap target unreachable → seek storm on every timeupdate.
+            const total = totalFrames();
+            if (total > 0 && val > total) {
+                val = total;
+                inp.value = val;
+            }
             const prev = s[field];
             // Speculatively apply so we can validate against both fields, but
             // snapshot BEFORE the mutation so undo restores cleanly. If the
@@ -2135,7 +2175,7 @@ async function saveAll({ auto = false } = {}) {
     // Auto-save already defers via scheduleAutoSave; manual must mirror that
     // or the in-progress mark is silently dropped from the saved payload.
     if (state.pendingStart !== null) {
-        if (!auto) showToast('片段未关闭 — 按 O 或 S 标记结束后再保存', 'info');
+        if (!auto) showToast('片段未关闭 — 按 O/S 关闭，或按 Esc 取消', 'info');
         return;
     }
     saveInFlight = true;
@@ -2166,7 +2206,14 @@ async function saveAll({ auto = false } = {}) {
         `;
     }
     try {
-        if (state.storageMode === 'local') {
+        // 'local' must not be absorbing: a MANUAL save re-probes the backend
+        // (5s-capped POST below). On success the normal success path switches
+        // back to backend mode, captures the ETag and clears pending-sync; on
+        // failure the catch's local fallback is exactly today's local save.
+        // Auto-saves stay purely local — the 1.5s debounce must not spam a
+        // dead backend with probes.
+        const localReProbe = state.storageMode === 'local' && !auto;
+        if (state.storageMode === 'local' && !localReProbe) {
             try {
                 saveSegmentsLocal(segments, annotator_id);
                 markLocalPendingSync(annotator_id, segments.length);
@@ -2199,11 +2246,15 @@ async function saveAll({ auto = false } = {}) {
         if (segmentsEtag !== null && !(saveConflict && !auto)) {
             headers['If-Match'] = segmentsEtag;
         }
-        const r = await fetch(`${API_BASE}/api/embodied/segments`, {
+        // 15s cap: a hung POST otherwise leaves the spinner up forever AND —
+        // via the unconditional saveInFlight guard — blocks every later save.
+        // The timeout rejection lands in the catch's local fallback; finally
+        // still clears saveInFlight. Re-probes use a tighter 5s budget.
+        const r = await fetchWithTimeout(`${API_BASE}/api/embodied/segments`, {
             method: 'POST',
             headers,
             body: JSON.stringify({ episode_id: EPISODE_ID, annotator_id, segments }),
-        });
+        }, localReProbe ? 5000 : 15000);
         if (r.status === 409) {
             // Stale write: another session saved since we last read. Handled
             // BEFORE the generic !r.ok throw — the catch below would flip the
@@ -2280,15 +2331,12 @@ async function loadExisting() {
     const annotator_id = getAnnotatorId();
     const localPendingSync = hasLocalPendingSync(annotator_id);
     setStorageMode('checking', '检查后端同步');
-    // A hung GET must not park the badge on 检查后端同步 forever — abort after
-    // 10s so the catch path's local-mode fallback takes over.
-    const abort = new AbortController();
-    const abortTimer = setTimeout(() => abort.abort(), 10000);
     try {
-        const r = await fetch(`${API_BASE}/api/embodied/segments?episode_id=${EPISODE_ID}&annotator_id=${annotator_id}`, {
+        // A hung GET must not park the badge on 检查后端同步 forever — the 10s
+        // timeout aborts into the catch path's local-mode fallback.
+        const r = await fetchWithTimeout(`${API_BASE}/api/embodied/segments?episode_id=${EPISODE_ID}&annotator_id=${annotator_id}`, {
             // Defense-in-depth: server requires header == query annotator_id.
             headers: { 'X-Annotator-Id': annotator_id },
-            signal: abort.signal,
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         // Optimistic-concurrency token: remember the version we just read so
@@ -2338,8 +2386,6 @@ async function loadExisting() {
         setDirty(false);
         setStorageMode('local', '本地演示模式 · 片段保存在浏览器');
         if (segs.length) showToast(`已加载 ${segs.length} 个本地演示片段`);
-    } finally {
-        clearTimeout(abortTimer);
     }
 }
 
@@ -2505,7 +2551,23 @@ document.addEventListener('keydown', (e) => {
         return;
     }
     if (e.key === 'Escape') {
-        helpOverlay.classList.add('hidden');
+        if (!helpOverlay.classList.contains('hidden')) {
+            helpOverlay.classList.add('hidden');
+            return;
+        }
+        // Cancel an open mark. Previously the ONLY exits from pendingStart
+        // were closing the segment or reloading the page — a mis-pressed I/S
+        // dead-ended the save flow (saveAll refuses while a mark is open).
+        if (state.pendingStart !== null) {
+            state.pendingStart = null;
+            btnMarkStart.classList.remove('hidden');
+            btnMarkEnd.classList.add('hidden');
+            segmentStatus.classList.add('hidden');
+            segmentStatus.textContent = '';
+            renderPendingGhost();
+            updateWorkflowPanel();
+            showToast('已取消未关闭片段', 'info');
+        }
         return;
     }
     // Focused <button> keeps native Space/Enter activation for Tab-nav users —
