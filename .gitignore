@@ -10,6 +10,7 @@ venv/
 backend/data/
 *.lock
 state.json
+backups/
 
 # Node / OS
 node_modules/
