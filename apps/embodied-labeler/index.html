@@ -54,7 +54,9 @@
             </div>
             <section id="video-section" class="embodied-video-card">
                 <div id="video-frame" class="relative flex justify-center embodied-video-frame" data-player-state="loading">
-                    <video id="video" preload="auto"
+                    <!-- muted: episode clips have no audio track; without it Chrome's power
+                         policy pauses "video-only background media" mid-playback. -->
+                    <video id="video" preload="auto" muted
                            class="video-crisp rounded bg-black object-contain cursor-pointer"
                            style="height: min(54vh, 460px); width: auto; max-width: 100%; aspect-ratio: 16/9;"
                            data-video-src="assets/embodied/demo_episode.mp4"
@@ -399,7 +401,7 @@
             </div>
         </div>
     </div>
-    <script src="assets/embodied/embodied.js?v=28" type="module"></script>
+    <script src="assets/embodied/embodied.js?v=29" type="module"></script>
     <script src="assets/console/embodied-console.js?v=1" type="module"></script>
 </body>
 </html>

@@ -14,7 +14,7 @@ def test_host_serves_labeler_and_embodied_api_same_origin(tmp_path, monkeypatch)
 
     labeler = client.get("/labeler/")
     assert labeler.status_code == 200
-    assert "assets/embodied/embodied.js?v=28" in labeler.text
+    assert "assets/embodied/embodied.js?v=29" in labeler.text
     assert "127.0.0.1:8001" not in labeler.text
 
     datasets = client.get("/api/embodied/datasets")

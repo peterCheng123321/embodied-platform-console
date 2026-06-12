@@ -57,6 +57,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Cross-origin labeler deploys need to READ the segments ETag for the
+    # If-Match optimistic-concurrency handshake (same-origin reads it freely).
+    expose_headers=["ETag"],
 )
 
 app.include_router(embodied_platform_router)
