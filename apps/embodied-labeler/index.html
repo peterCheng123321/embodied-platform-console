@@ -6,28 +6,11 @@
     <!-- Empty by default: hosted labeler API calls use the current origin. -->
     <meta name="api-base" content="">
     <title>嵌入式 AI 标注 · 星聚</title>
-    <script src="/vendor/tailwind/tailwind-play.js"></script>
+    <!-- Compiled, tree-shaken Tailwind (16KB) — replaces the 407KB Play CDN runtime
+         JIT. Theme + rebuild steps live in apps/embodied-labeler/tailwind.config.js. -->
+    <link rel="stylesheet" href="assets/console/tailwind.css?v=1">
     <link href="/vendor/font-awesome/css/font-awesome.min.css" rel="stylesheet">
     <link href="/vendor/fonts/plex.css" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#0d4f4a',
-                        secondary: '#1f7a6b',
-                        dark: '#16201f',
-                        light: '#fcfcfd',
-                        accent: '#ff5a36',
-                    },
-                    fontFamily: {
-                        sans: ['"IBM Plex Sans SC"', 'sans-serif'],
-                        mono: ['"IBM Plex Mono"', 'monospace'],
-                    },
-                },
-            },
-        };
-    </script>
     <link rel="stylesheet" href="assets/embodied/embodied.css?v=31">
     <link rel="stylesheet" href="assets/console/console.css?v=5">
     <!-- 星聚 Liquid Glass skin (additive; preserves all chassis behaviour) -->
