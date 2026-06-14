@@ -33,3 +33,14 @@ def test_glass_css_served_orange_and_reset_free():
     # (.gl-stage, .gl-panel, etc.) legitimately use overflow:hidden and are kept.
     # Check for the bare body selector (not .gl-body or html,body or similar).
     assert "\nbody {" not in body  # bundle put overflow:hidden on body{}
+
+
+def test_refract_js_served_with_autoinit():
+    r = client.get("/vendor/glass/refract.js")
+    assert r.status_code == 200
+    body = r.text
+    assert "installGlassRefraction" in body         # ported core
+    assert "GlassRefraction" in body                 # auto-init public API
+    # Intensity levels drive default-on refraction (spec §3/§6).
+    for level in ("off", "light", "standard", "strong"):
+        assert level in body
