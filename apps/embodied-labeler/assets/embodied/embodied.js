@@ -880,15 +880,34 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Plain 1-9: set the active skill (for the next segment created)
-    setActiveSkill(targetSkill);
-    // Brief flash on the activated pill so keyboard activation registers
-    // visually, not just via the .active ring transition.
-    const pill = palette.querySelectorAll('.skill-pill')[n - 1];
-    if (pill) {
-        pill.classList.add('flash');
-        setTimeout(() => pill.classList.remove('flash'), 240);
+    // Plain 1-9 — fast labeling. The skill key both selects the skill AND drives
+    // the segment, so you never have to click "Mark start":
+    //   • no segment open                 → select skill + open a start at the playhead
+    //   • segment open & playhead advanced → CHAIN: close the open segment (it keeps
+    //     the skill it was opened under) and open the next one here with the new
+    //     skill — so a contiguous trajectory is labelled by tapping the skill at
+    //     each transition while it plays. Press S to close the final segment.
+    //   • segment open, playhead not advanced → just switch the skill it commits under
+    const flashPill = () => {
+        const pill = palette.querySelectorAll('.skill-pill')[n - 1];
+        if (pill) {
+            pill.classList.add('flash');
+            setTimeout(() => pill.classList.remove('flash'), 240);
+        }
+    };
+    const curFrame = frameOf(video.currentTime || 0);
+
+    if (state.pendingStart !== null && curFrame > state.pendingStart) {
+        toggleSegment();              // close — commits under the CURRENT active skill
+        setActiveSkill(targetSkill);  // switch to the newly chosen skill
+        toggleSegment();              // open the next segment at this frame
+    } else if (state.pendingStart === null) {
+        setActiveSkill(targetSkill);
+        toggleSegment();              // open a labelled segment at the playhead
+    } else {
+        setActiveSkill(targetSkill);  // open but zero-width here → just set the skill
     }
+    flashPill();
 });
 
 renderPalette();
@@ -1628,17 +1647,18 @@ function commitSegmentRaw(start, end, skillId) {
         success: null,
     };
     state.segments.push(seg);
+    // Select the new segment (so it's ready to nudge/QA) but DON'T auto-loop.
+    // The old auto-QA-loop force-enabled playback looping on every commit, which
+    // trapped the video replaying each marked segment forever ("dead loop") and
+    // broke fast forward/chained marking. QA-loop is now opt-in: select a segment
+    // and press the Loop button or "\\" to watch its boundaries in a loop.
+    state.selectedId = seg.id;
+    if (typeof jklK === 'function') jklK();   // normalize shuttle state, no loop
     renderLanes();
     renderPendingGhost();   // clear the ghost overlay
     if (typeof renderSegmentList === 'function') renderSegmentList();
     if (typeof setDirty === 'function') setDirty(true);
-    // Auto-loop the just-created segment so the labeler can QA the boundaries
-    // immediately (research E.2 — Labelbox community pattern, "watch in a
-    // loop in their normal practice"). Replaces the previous auto-advance:
-    // QA-then-move-on beats commit-and-fly-past for boundary accuracy. To
-    // mark back-to-back without loop, press \\ once to disable.
-    enterSegmentQALoop(seg);
-    showToast(`Added ${skillId} [${start}, ${end}) — segment selected for QA`, 'success');
+    showToast(`Added ${skillId} [${start}, ${end})`, 'success');
 }
 
 function toggleSegment() {
