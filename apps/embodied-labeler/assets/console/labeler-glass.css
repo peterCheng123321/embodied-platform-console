@@ -97,6 +97,12 @@
    slab itself frost. Inner video frame keeps its own dark surface. */
 .console-viewport { background: var(--glass-fill); padding: 4px; }
 
+/* keep the transport row above the fold: the floating gaps (12px padding+gap)
+   eat vertical space, so trim the video from the chassis's 38vh a touch so
+   play / Mark / frame-stepper / scrub all fit without scrolling
+   (console.css's "transport controls stay visible without scrolling" rule). */
+.console #video { height: min(31vh, 320px) !important; }
+
 /* ---- legibility over glass ---------------------------------------------- */
 /* chrome text gets a faint shadow so it survives bright backdrop patches
    (the adaptive-legibility lesson from the design source). */
