@@ -15,3 +15,21 @@ def test_tokens_css_served_and_orange():
     # No leftover system-green from the source bundle.
     assert "#30d158" not in body
     assert "#28b34a" not in body
+
+
+def test_glass_css_served_orange_and_reset_free():
+    r = client.get("/vendor/glass/glass.css")
+    assert r.status_code == 200
+    body = r.text
+    # Core material primitive is present.
+    assert ".glass {" in body
+    # Orange retarget reached the hardcoded green literals too.
+    for green_literal in ("#30d158", "#16a34a", "#6ee787", "#9af0b4", "#28b34a"):
+        assert green_literal not in body, f"leftover green literal {green_literal}"
+    # RESET-FREE: the bundle's global resets must NOT ship in the app-safe file,
+    # or they will clobber the real apps' layout when linked in Phases 1-2.
+    assert "* { margin: 0" not in body
+    # The body{} rule (which held overflow:hidden) must be gone; component rules
+    # (.gl-stage, .gl-panel, etc.) legitimately use overflow:hidden and are kept.
+    # Check for the bare body selector (not .gl-body or html,body or similar).
+    assert "\nbody {" not in body  # bundle put overflow:hidden on body{}
