@@ -248,3 +248,84 @@
 /* focus mode: dim the backdrop + drop its grain so the work pops */
 body.glass-focus .glass-backdrop { filter: brightness(calc(var(--cc-bright, 1) * 0.55)); }
 body.glass-focus .glass-backdrop::after { opacity: 0; }
+
+/* a now-playing media tile inside the Control Center */
+.cc-media { display: flex; align-items: center; gap: 11px; }
+.cc-media .cc-media-art {
+  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+  display: grid; place-items: center; color: #fff; font-size: 17px;
+  background: linear-gradient(150deg, var(--ds-accent), var(--accent-2));
+  box-shadow: 0 4px 14px color-mix(in oklch, var(--ds-accent) 40%, transparent), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+.cc-media .cc-media-meta { min-width: 0; }
+.cc-media .cc-media-title { font-size: 13px; font-weight: 600; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-media .cc-media-sub { font-size: 11px; color: var(--t3); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ============================================================================
+   POLISH — make the nested components read as glass-native
+   (scoped .console / .embodied-page.console so it wins over embodied.css's
+    !important rules; purely presentational, no behaviour touched)
+   ========================================================================== */
+
+/* skill pills → frosted glass chips; active = orange */
+.embodied-page.console .skill-pill {
+  border: 0 !important;
+  border-radius: 11px !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+  color: var(--ds-ink) !important;
+  transition: background 0.16s, box-shadow 0.16s, transform 0.16s;
+}
+.embodied-page.console .skill-pill:hover {
+  background: rgba(255, 255, 255, 0.11) !important;
+  transform: translateY(-1px);
+}
+.embodied-page.console .skill-pill.active {
+  background: color-mix(in oklch, var(--ds-accent) 22%, transparent) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--ds-accent) 55%, transparent),
+    0 4px 14px color-mix(in oklch, var(--ds-accent) 24%, transparent);
+  color: #fff !important;
+}
+.embodied-page.console .skill-pill .font-mono { color: var(--ds-ink-soft) !important; }
+
+/* save button → orange glass gradient */
+.console #save-btn {
+  background: linear-gradient(160deg, var(--ds-accent), var(--accent-2)) !important;
+  box-shadow:
+    0 5px 16px color-mix(in oklch, var(--ds-accent) 40%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42) !important;
+}
+
+/* workflow status panel → soft glass tiles */
+.console .embodied-workflow-panel { background: transparent; }
+.console .embodied-workflow-metric {
+  border: 0 !important;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.10);
+}
+
+/* segment list rows → glass rows with an orange selected state */
+.console #segment-list > div:not(.empty-state) {
+  border-radius: var(--r-sm);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  transition: background 0.16s, box-shadow 0.16s;
+}
+.console #segment-list > div:not(.empty-state):hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* mark-start + secondary transport surfaces → frosted, not flat zinc */
+.console #btn-mark-start {
+  background: rgba(255, 255, 255, 0.07) !important;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14) !important;
+}
+.console .embodied-frame-stepper,
+.console .embodied-frame-chip {
+  background: rgba(255, 255, 255, 0.05) !important;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.10) !important;
+}
+
+/* panel headings get the brighter vibrancy ink */
+.console .embodied-panel-heading span { color: var(--t1); }

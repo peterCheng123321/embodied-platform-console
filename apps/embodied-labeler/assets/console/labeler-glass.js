@@ -19,6 +19,16 @@ function setSeg(group, value) {
   );
 }
 
+/* mirror the current episode into the Control Center's now-playing tile */
+function syncMedia() {
+  const ds = document.getElementById("dataset-label");
+  const sub = $("#cc-ep-sub");
+  if (ds && sub) { const t = ds.textContent.trim(); if (t) sub.textContent = t; }
+  const task = document.getElementById("task-text-zh") || document.getElementById("task-text");
+  const title = $("#cc-ep-title");
+  if (task && title) { const t = task.textContent.trim(); if (t) title.textContent = t; }
+}
+
 /* ---- apply persisted settings on load ----------------------------------- */
 function restore() {
   const density = localStorage.getItem(LS.density) || "comfortable";
@@ -42,13 +52,15 @@ function restore() {
 
   // refraction level is owned + persisted by GlassRefraction; reflect it.
   if (window.GlassRefraction) setSeg("refract", window.GlassRefraction.getLevel());
+
+  syncMedia();
 }
 
 /* ---- wire the controls --------------------------------------------------- */
 function wire() {
   // open / close
   const scrim = $("#cc-scrim");
-  const open = () => { if (scrim) { scrim.hidden = false; if (window.GlassRefraction) setSeg("refract", window.GlassRefraction.getLevel()); } };
+  const open = () => { if (scrim) { scrim.hidden = false; syncMedia(); if (window.GlassRefraction) setSeg("refract", window.GlassRefraction.getLevel()); } };
   const close = () => { if (scrim) scrim.hidden = true; };
   $("#cc-toggle")?.addEventListener("click", open);
   scrim?.addEventListener("click", (e) => { if (e.target === scrim) close(); });
