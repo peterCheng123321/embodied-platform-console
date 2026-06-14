@@ -12,7 +12,7 @@
 
 **Source bundle (read-only reference):** `/tmp/ds_pack/data-annotation/project/glass/{glass.css,refract.js}`
 
-**Run tests from** `backend/` as: `.venv/bin/python -m pytest <path> -q` (matches the existing labeler test convention).
+**Run tests from** `backend/` as: `python3 -m pytest <path> -q` (per README.md:77 — this repo uses system `python3`, no venv). Baseline before Phase 0: **225 passed, 10 skipped**.
 
 ---
 
@@ -69,7 +69,7 @@ def test_tokens_css_served_and_orange():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_glass_assets.py::test_tokens_css_served_and_orange -q`
+Run: `python3 -m pytest tests/test_glass_assets.py::test_tokens_css_served_and_orange -q`
 Expected: FAIL — 404 (file does not exist yet).
 
 - [ ] **Step 3: Create `apps/_vendor/glass/tokens.css`**
@@ -119,7 +119,7 @@ Expected: FAIL — 404 (file does not exist yet).
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.venv/bin/python -m pytest tests/test_glass_assets.py::test_tokens_css_served_and_orange -q`
+Run: `python3 -m pytest tests/test_glass_assets.py::test_tokens_css_served_and_orange -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -160,7 +160,7 @@ def test_glass_css_served_orange_and_reset_free():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_glass_assets.py::test_glass_css_served_orange_and_reset_free -q`
+Run: `python3 -m pytest tests/test_glass_assets.py::test_glass_css_served_orange_and_reset_free -q`
 Expected: FAIL — 404.
 
 - [ ] **Step 3: Create `apps/_vendor/glass/glass.css` by porting the bundle file with these EXACT transformations**
@@ -183,7 +183,7 @@ Copy `/tmp/ds_pack/data-annotation/project/glass/glass.css` to `apps/_vendor/gla
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.venv/bin/python -m pytest tests/test_glass_assets.py::test_glass_css_served_orange_and_reset_free -q`
+Run: `python3 -m pytest tests/test_glass_assets.py::test_glass_css_served_orange_and_reset_free -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -220,7 +220,7 @@ def test_refract_js_served_with_autoinit():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_glass_assets.py::test_refract_js_served_with_autoinit -q`
+Run: `python3 -m pytest tests/test_glass_assets.py::test_refract_js_served_with_autoinit -q`
 Expected: FAIL — 404.
 
 - [ ] **Step 3: Create `apps/_vendor/glass/refract.js`**
@@ -271,7 +271,7 @@ First copy `/tmp/ds_pack/data-annotation/project/glass/refract.js` verbatim (it 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.venv/bin/python -m pytest tests/test_glass_assets.py::test_refract_js_served_with_autoinit -q`
+Run: `python3 -m pytest tests/test_glass_assets.py::test_refract_js_served_with_autoinit -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -312,7 +312,7 @@ def test_preview_page_served_and_wired():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.venv/bin/python -m pytest tests/test_glass_assets.py::test_preview_page_served_and_wired -q`
+Run: `python3 -m pytest tests/test_glass_assets.py::test_preview_page_served_and_wired -q`
 Expected: FAIL — 404.
 
 - [ ] **Step 3: Create `apps/_vendor/glass/preview.css`** (the page-level scaffolding glass.css no longer carries)
@@ -421,7 +421,7 @@ body {
 
 - [ ] **Step 5: Run the served test**
 
-Run: `.venv/bin/python -m pytest tests/test_glass_assets.py::test_preview_page_served_and_wired -q`
+Run: `python3 -m pytest tests/test_glass_assets.py::test_preview_page_served_and_wired -q`
 Expected: PASS.
 
 - [ ] **Step 6: Manual visual verification in Chrome (refraction only renders live)**
@@ -466,7 +466,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 - [ ] **Step 3: Verify existing tests still pass (no behavior regression)**
 
-Run: `.venv/bin/python -m pytest tests/ -q`
+Run: `python3 -m pytest tests/ -q`
 Expected: PASS (same count as before this task; gzip is transparent to the suite).
 
 - [ ] **Step 4: Verify compression on the live server**
@@ -493,7 +493,7 @@ git commit -m "perf(server): gzip-compress text assets via GZipMiddleware"
 
 - [ ] **Step 1: Full suite green**
 
-Run: `.venv/bin/python -m pytest tests/ -q`
+Run: `python3 -m pytest tests/ -q`
 Expected: PASS, including the 4 new tests in `tests/test_glass_assets.py`.
 
 - [ ] **Step 2: Confirm no real app changed yet**
