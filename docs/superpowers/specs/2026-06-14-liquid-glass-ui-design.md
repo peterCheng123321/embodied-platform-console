@@ -119,11 +119,13 @@ ops console's 14 tables costs scroll/GPU. Mitigations kept in the build:
 ## 7. Phasing (each phase independently shippable)
 
 **Phase 0 — Shared design system + perf.**
-- Build/lock `apps/_shared/glass/{tokens,glass}.css` + `refract.js`, retargeted to orange.
-- **Replace the 407 KB Tailwind Play CDN** (`/vendor/tailwind/tailwind-play.js`) in the labeler
-  with compiled/static CSS, and **add `GZipMiddleware`** to `backend/api/main.py` (folds in the
-  prior perf findings — uncompressed 590 KB labeler payload → ~120–150 KB).
-- Source of truth for everything after.
+- Build/lock `apps/_vendor/glass/{tokens,glass}.css` + `refract.js`, retargeted to orange,
+  validated by a standalone `/vendor/glass/preview.html` reference page.
+- **Add `GZipMiddleware`** to `backend/api/main.py` (uncompressed 590 KB labeler payload → ~120–150 KB).
+- **Tailwind Play CDN removal deferred to end of Phase 1** (per the Phase 0 plan): the labeler's
+  inline Tailwind utility classes must be migrated to glass classes first, or removing the CDN
+  breaks the labeler. The gzip win is independent and ships here.
+- Source of truth for everything after. (See `docs/superpowers/plans/2026-06-14-liquid-glass-phase0-design-system.md`.)
 
 **Phase 1 — Labeler, end-to-end (flagship).**
 - Map the console chassis onto glass: `console-topbar`→`gl-top`, `console-tree`→glass rail/panel,
