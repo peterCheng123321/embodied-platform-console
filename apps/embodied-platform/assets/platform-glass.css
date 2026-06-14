@@ -259,22 +259,16 @@ body {
    brand orange so the KPI accent matches the rest of the glass skin, and keep
    the big mono numerals crisp (no blur on content — only the slab frosts).
    --------------------------------------------------------------------------- */
-.platform-workspace .summary-grid article.glass {
-  /* the slab frosts via §3; re-color the brand left-rule to orange. */
-  border-left: 3px solid var(--accent);
-}
-/* re-assert the tile's own instrument bar (::after) in brand orange. This both
-   beats glass.css's .glass::after inner-glow AND keeps the platform's feature. */
-.platform-workspace .summary-grid article.glass::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 55%, transparent 100%);
-  opacity: 0.6;
-}
+/* The slab frosts via §3. The brand LEFT RULE is applied downstream as a
+   radius-safe inset box-shadow (~1166-1170) — a hard `border-left` here was
+   reset by the shared material block's `border: 1px` (~1085, identical
+   specificity, later source), and would clip square at the 22px corner. The
+   old, fully-overridden `border-left: 3px solid var(--accent)` rule has been
+   removed to keep a single coherent definition. */
+/* the tile's instrument bar (::after) is defined ONCE, in the GLOBAL MATERIAL
+   CORRECTION at the foot of this file (brand orange). The earlier duplicate
+   that lived here was fully overridden by it (same selector, later source) and
+   has been removed to keep a single coherent definition. */
 /* KPI eyebrow + numerals stay crisp; add a faint chrome shadow to the label. */
 .platform-workspace .summary-grid article.glass span {
   color: var(--t2);
@@ -368,26 +362,16 @@ body {
 
 /* ---------------------------------------------------------------------------
    Module panels (.module-panel ×11) → frosted floating glass slabs.
-   .platform-workspace scope out-specifies the base
-   `.summary-grid article, .module-panel { background; border }` rule.
-   We touch ONLY material props (bg / backdrop-filter / border / radius /
-   box-shadow) — never `display`, so the base
-   .module-panel{display:none} / .module-panel.active{display:block}
-   visibility toggle keeps working (otherwise every panel would show at once).
+   The panel MATERIAL (bg / backdrop-filter / border / radius / box-shadow rim)
+   is defined ONCE now: §3 (.module-panel.glass, radius + inset rim) plus the
+   GLOBAL MATERIAL CORRECTION at the foot of this file (bg / border / rim) and
+   the CONTENT PANE PERFORMANCE TIER (backdrop-filter:none for scroll perf). The
+   bare `.platform-workspace .module-panel { ...material... }` duplicate that
+   lived here was fully overridden for every live panel (all 11 are static
+   `.glass`, no JS emits a bare panel) and has been removed — single coherent
+   def. The visibility toggle (.module-panel{display:none}/.active{display:block})
+   is owned by the base sheet and is untouched here.
    --------------------------------------------------------------------------- */
-.platform-workspace .module-panel {
-  background: var(--glass-fill-2);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
-  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
-  border: 0;
-  border-radius: var(--r-lg);
-  /* inset rim instead of a positioned pseudo: survives panel overflow/scroll */
-  box-shadow:
-    var(--float),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
-}
 
 /* panel-head divider was a solid --edge hairline on an opaque ground; soften to
    a translucent rule so it reads as part of the frosted slab */
@@ -431,12 +415,9 @@ body {
     inset 0 -20px 44px rgba(0, 0, 0, 0.22);
 }
 
-/* base ::after is the teal instrument bar (0,1,2) — out-specify (0,2,2) and
-   re-cast it as the orange brand gradient */
-.platform-workspace .summary-grid article::after {
-  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 55%, transparent 100%);
-  opacity: 0.7;
-}
+/* the instrument bar (::after) re-cast to the orange brand gradient is defined
+   ONCE now, in the GLOBAL MATERIAL CORRECTION (it out-specifies this domain rule
+   and glass.css's teal bar). This duplicate has been removed — single def. */
 
 /* tile eyebrow label → vibrancy muted ink + faint shadow over the frost */
 .platform-workspace .summary-grid article span {
@@ -697,18 +678,13 @@ body #login-form .login-field {
    glass slab; keeps the original overflow:hidden so rows clip to the radius.
    --------------------------------------------------------------------------- */
 .platform-workspace .data-table {
-  background: var(--glass-fill-2);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
-  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
-  border: 0;
+  /* This block is the SOLE owner of the panel radius (§3 does not list
+     .data-table). Its former material — background, backdrop-filter, border and
+     the inset box-shadow rim — was fully superseded downstream and has been
+     removed to keep a single coherent definition: the shared material block
+     paints background/border/shadow (~1082-1090), the dense override re-paints
+     background (~1204), and the perf tier nulls backdrop-filter (~1213). */
   border-radius: var(--r-lg);
-  /* scrolling panel: inset box-shadow rim (NOT a positioned pseudo, which would
-     scroll away). Matches the labeler's frosted-panel recipe. */
-  box-shadow:
-    var(--float),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1117,17 +1093,31 @@ body #login-form .login-field {
   background: var(--ops-glass-material-dense);
 }
 
+/* LOGIN CLIP FIX: the shared material block above sets overflow:hidden so each
+   slab's specular ::before and frost clip to its radius. But the header hosts
+   the absolutely-positioned #login-form popover (anchored to .login-zone, drops
+   BELOW the header edge) — overflow:hidden would clip it and hide all 25 write
+   actions behind it. Relax the HEADER only; its rounded background is still
+   clipped by border-radius and its ::before is inset:0, so the frost stays
+   contained. #login-form keeps its OWN overflow:hidden from the shared list. */
+.platform-header.glass {
+  overflow: visible;
+}
+
 .platform-workspace .summary-grid article.glass,
 .platform-workspace .mon-tile {
   background: var(--ops-glass-material-soft);
 }
 
+/* specular ::before rim on the NON-scrolling slabs only. The two large
+   scrolling panes — .module-panel and .data-table — are intentionally excluded:
+   §3 display:none's their pseudos because a positioned ::before scrolls away
+   from the panel edge, and they carry the inset box-shadow rim instead. (They
+   also drop live backdrop-filter in the perf tier below.) */
 .platform-header.glass::before,
 .platform-workspace .module-rail.glass::before,
 .platform-workspace .summary-grid article.glass::before,
-.platform-workspace .module-panel.glass::before,
 .platform-workspace .mode-banner.glass::before,
-.platform-workspace .data-table::before,
 .platform-workspace .collection-summary::before,
 .platform-workspace .mon-tile::before,
 .platform-workspace .mon-gauge::before,
@@ -1166,27 +1156,42 @@ body #login-form .login-field {
   z-index: 1;
 }
 
+/* KPI brand accent (single coherent definition).
+   The shared material rule above paints every slab with the same rim+shadow and
+   no left accent. KPI tiles are the one slab that carries a brand bar — restore
+   it as a radius-safe inset box-shadow (a hard border-left would clip square at
+   the 22px corner) so the orange reads as the intended 3px left rule. This is
+   the SOLE surviving accent mechanism: the §6 `border-left` and the DOMAIN
+   `inset 3px 0 0 var(--accent)` defs are now superseded by this winning rule. */
 .platform-workspace .summary-grid article.glass {
-  border-left-width: 1px;
+  box-shadow:
+    var(--ops-glass-shadow),
+    var(--ops-glass-rim),
+    inset 3px 0 0 var(--accent);
 }
 
+/* the tile instrument bar (::after) reads brand ORANGE again — the white
+   hairline override is dropped. Out-specifies glass.css's .glass::after glow. */
 .platform-workspace .summary-grid article.glass::after {
   content: "";
   position: absolute;
-  left: 1rem;
-  right: 1rem;
+  left: 0;
+  right: 0;
   bottom: 0;
   z-index: 1;
-  height: 1px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.08), transparent);
-  opacity: 0.78;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 55%, transparent 100%);
+  opacity: 0.7;
 }
 
+/* ACTIVE rail item = brand-orange wash + ring (single coherent definition).
+   The earlier weak mix (accent 16% over white) is dropped so this orange wash
+   is the sole def; the active ::before tab bar stays --accent from the base. */
 .platform-workspace .module-rail button.active {
-  background: color-mix(in oklch, var(--accent) 16%, rgba(255, 255, 255, 0.08));
+  background: color-mix(in oklch, var(--accent) 20%, transparent);
+  color: #fff;
   box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--accent) 38%, transparent),
+    inset 0 0 0 1px color-mix(in oklch, var(--accent) 42%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
@@ -1217,15 +1222,16 @@ body #login-form .login-field {
   background: color-mix(in oklch, var(--accent) 9%, rgba(255, 255, 255, 0.04));
 }
 
+/* FORM FIELDS resting state is owned by the field rule above
+   (background-color: rgba(0,0,0,.22), dark translucent per the legibility
+   comment) so REST matches HOVER (rgba(0,0,0,.28)) and FOCUS (rgba(0,0,0,.30)).
+   The form inputs/selects are intentionally NOT in this light-frost list — a
+   light-at-rest fill here would contradict the dark interactive states and blur
+   the dense mono values. The light frost stays on the recessed tracks and the
+   secondary button, whose resting look IS light translucent. */
 .platform-workspace .collection-summary > div,
 .platform-workspace .mon-tile__bar,
 .platform-workspace .mon-gauge__track,
-body .form-grid input,
-body .form-grid select,
-body .action-row input,
-body .action-row select,
-body #login-form input,
-body #login-form select,
 body .btn-secondary {
   background-color: rgba(255, 255, 255, 0.055);
   box-shadow:

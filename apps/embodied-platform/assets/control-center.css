@@ -1,0 +1,115 @@
+/* 星聚 · Liquid Glass — 控制中心 Control Center (ops console)
+   Brings the labeler's Control Center to the ops console so a console-only user
+   can dial glass refraction (the localStorage setting governs BOTH apps).
+   Mirrors apps/embodied-labeler/assets/console/labeler-glass.css's .cc-* look,
+   translated onto the console's shared token vocabulary:
+     --ds-accent → --accent   --ds-ink → --t1   --ds-ink-soft → --t2
+   Strictly additive: loads AFTER platform-glass.css so it layers on top, and
+   does NOT re-declare the base .glass-backdrop (graphite + grain + --cc-bright)
+   which platform-glass.css already owns — only the two extra backdrop moods. */
+
+/* ---- backdrop moods (Control Center → 背景). Default graphite lives in
+   platform-glass.css; these add 午夜 midnight + 暖橙 ember, mirroring the
+   labeler's moods so the shared setting reads the same in either app. -------- */
+.glass-backdrop[data-bg="midnight"] {
+  background:
+    radial-gradient(60% 60% at 78% 12%, rgba(94, 92, 230, 0.50), transparent 62%),
+    radial-gradient(55% 55% at 14% 28%, rgba(10, 132, 255, 0.42), transparent 60%),
+    radial-gradient(70% 70% at 50% 108%, rgba(48, 80, 200, 0.38), transparent 60%),
+    linear-gradient(160deg, #0c1230, #060814 58%, #0a0e22);
+}
+.glass-backdrop[data-bg="ember"] {
+  background:
+    radial-gradient(58% 58% at 16% 18%, rgba(255, 122, 70, 0.34), transparent 60%),
+    radial-gradient(60% 60% at 86% 20%, rgba(255, 159, 10, 0.30), transparent 60%),
+    radial-gradient(72% 70% at 70% 104%, rgba(214, 67, 31, 0.34), transparent 62%),
+    linear-gradient(160deg, #1c1310, #0c0807 60%, #160f0c);
+}
+
+/* ============================================================================
+   控制中心 · Control Center (glass overlay, opened from the header)
+   ========================================================================== */
+.cc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  color: var(--t1);
+  font-family: var(--font);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.16s, transform 0.16s;
+}
+.cc-toggle:hover { background: rgba(255, 255, 255, 0.14); }
+.cc-toggle:active { transform: scale(0.95); }
+
+.cc-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.28);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 64px 16px 0 0;
+}
+.cc-scrim[hidden] { display: none; }
+
+.cc-panel {
+  width: 340px;
+  border-radius: var(--r-xl);
+  padding: 16px;
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(0.95);
+  backdrop-filter: blur(40px) saturate(200%) brightness(0.95);
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  animation: cc-pop 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes cc-pop { from { opacity: 0; transform: translateY(-8px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+.cc-title { font-size: 13px; font-weight: 650; color: var(--t1); margin-bottom: 12px; letter-spacing: 0.01em; }
+.cc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* a control tile */
+.cc-tile {
+  border-radius: var(--r-md);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cc-tile.wide { grid-column: 1 / -1; }
+.cc-tile-label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--t2); }
+
+/* segmented control inside a tile */
+.cc-seg { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: rgba(0, 0, 0, 0.25); }
+.cc-seg button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--t2);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.16s, background 0.16s;
+}
+.cc-seg button.on {
+  color: #fff;
+  background: linear-gradient(160deg, var(--accent), var(--accent-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* a horizontal slider track + fill (range input restyle) */
+.cc-slider { width: 100%; accent-color: var(--accent); }

@@ -105,7 +105,12 @@
 /* keep the transport row above the fold: the floating gaps (12px padding+gap)
    eat vertical space, so trim the video from the chassis's 38vh a touch so
    play / Mark / frame-stepper / scrub all fit without scrolling
-   (console.css's "transport controls stay visible without scrolling" rule). */
+   (console.css's "transport controls stay visible without scrolling" rule).
+   THIS RULE WINS the #video height cascade on the console page: it ties
+   console.css's `.console #video` (min(38vh,360px)) on specificity (0,1,1), but
+   index.html loads labeler-glass.css AFTER console.css, so last-declared wins.
+   Net rendered height on .console = min(27vh,300px). Do not reorder the <link>s
+   or raise the other rule's specificity without re-checking this. */
 .console #video { height: min(27vh, 300px) !important; }
 
 /* ---- legibility over glass ---------------------------------------------- */

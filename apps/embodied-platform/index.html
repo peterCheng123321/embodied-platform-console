@@ -8,9 +8,10 @@
   <link rel="manifest" href="assets/manifest.webmanifest">
   <link rel="stylesheet" href="/vendor/fonts/plex.css">
   <link rel="stylesheet" href="assets/embodied-platform.css?v=22">
-  <link rel="stylesheet" href="/vendor/glass/tokens.css">
-  <link rel="stylesheet" href="/vendor/glass/glass.css">
+  <link rel="stylesheet" href="/vendor/glass/tokens.css?v=1">
+  <link rel="stylesheet" href="/vendor/glass/glass.css?v=1">
   <link rel="stylesheet" href="assets/platform-glass.css?v=4">
+  <link rel="stylesheet" href="assets/control-center.css?v=1">
 </head>
 <body>
   <div class="glass-backdrop" aria-hidden="true"></div>
@@ -36,6 +37,7 @@
       </nav>
     </div>
     <div class="header-actions">
+      <button id="cc-toggle" class="cc-toggle" type="button" aria-label="打开控制中心">控制中心</button>
       <span id="api-status" class="status-pill" aria-live="polite">启动中</span>
       <div class="login-zone">
         <button type="button" id="login-toggle" class="btn-secondary">登录</button>
@@ -341,7 +343,46 @@
     </section>
   </main>
 
+  <!-- 控制中心 · Control Center (glass overlay; opened from the header) -->
+  <div id="cc-scrim" class="cc-scrim" hidden>
+    <div class="cc-panel" role="dialog" aria-label="控制中心">
+      <div class="cc-title">控制中心 · Control Center</div>
+      <div class="cc-grid">
+        <div class="cc-tile wide">
+          <div class="cc-tile-label">玻璃折射 Refraction</div>
+          <div class="cc-seg" data-cc="refract">
+            <button type="button" data-value="off">关</button>
+            <button type="button" data-value="light">轻</button>
+            <button type="button" data-value="standard">标准</button>
+            <button type="button" data-value="strong">强</button>
+          </div>
+        </div>
+        <div class="cc-tile">
+          <div class="cc-tile-label">密度 Density</div>
+          <div class="cc-seg" data-cc="density">
+            <button type="button" data-value="comfortable">舒适</button>
+            <button type="button" data-value="compact">紧凑</button>
+          </div>
+        </div>
+        <div class="cc-tile wide">
+          <div class="cc-tile-label">背景 Backdrop</div>
+          <div class="cc-seg" data-cc="backdrop">
+            <button type="button" data-value="graphite">石墨</button>
+            <button type="button" data-value="midnight">午夜</button>
+            <button type="button" data-value="ember">暖橙</button>
+          </div>
+        </div>
+        <div class="cc-tile wide">
+          <div class="cc-tile-label">亮度 Brightness</div>
+          <input id="cc-bright" class="cc-slider" type="range" min="50" max="130" value="100" aria-label="背景亮度">
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="assets/embodied-platform.js?v=21"></script>
   <script src="/vendor/glass/refract.js?v=2"></script>
+  <!-- 控制中心 glue: dials shared glass refraction / density / backdrop / brightness (additive) -->
+  <script src="assets/control-center.js?v=1" type="module"></script>
 </body>
 </html>

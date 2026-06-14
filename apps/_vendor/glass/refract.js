@@ -112,16 +112,17 @@
 })();
 
 /* Plain-JS auto-installer for non-React hosts (labeler + ops console).
-   Default-on per spec §3; reversible via the intensity level (persisted). */
+   Default-off (plain frost, no displacement maps) for scroll perf;
+   opt in to refraction via the intensity level (persisted). */
 (function () {
   var LEVELS = {
     off:      { on: false, scale: 0,  fringe: 0 },
-    light:    { on: true,  scale: 14, fringe: 1.5, maxArea: 160000 },
+    light:    { on: true,  scale: 14, fringe: 0,   maxArea: 160000 },
     standard: { on: true,  scale: 28, fringe: 3,   maxArea: 160000 },
     strong:   { on: true,  scale: 44, fringe: 5,   maxArea: 160000 },
   };
   var KEY = "glass-refract-level";
-  var level = localStorage.getItem(KEY) || "standard";   // default-on
+  var level = localStorage.getItem(KEY) || "off";   // default: plain frost, no displacement maps (perf)
   var controller = null;
 
   function opts() { return LEVELS[level] || LEVELS.standard; }

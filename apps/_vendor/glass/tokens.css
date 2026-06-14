@@ -12,6 +12,11 @@
   --warn: #ff9f0a;
   --warn-glow: rgba(255,159,10,0.5);
 
+  /* AI accent — used by the glass-kit pack components (purple) */
+  --ai: #bf5af2;
+  --ai-2: #a64ce0;
+  --ai-glow: color-mix(in oklch, var(--ai) 50%, transparent);
+
   /* vibrancy text (over glass) */
   --t1: rgba(255,255,255,0.96);
   --t2: rgba(255,255,255,0.66);

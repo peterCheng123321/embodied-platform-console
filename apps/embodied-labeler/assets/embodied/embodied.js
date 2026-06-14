@@ -562,16 +562,6 @@ function setLoop(on) {
 
 btnLoop.addEventListener('click', () => setLoop(!loopEnabled));
 
-function enterSegmentQALoop(seg) {
-    // Normalize shuttle state before setLoop starts forward playback. Without
-    // this, committing from J-reverse can leave reverse rAF and native play
-    // fighting over currentTime.
-    if (typeof jklK === 'function') jklK();
-    state.selectedId = seg.id;
-    if (isFinite(video.duration)) video.currentTime = timeOfFrame(seg.start_frame);
-    if (typeof setLoop === 'function') setLoop(true);
-}
-
 // On every frame tick, if looping and we've crossed the selected segment's
 // end, snap back to its start. The check is cheap (one if + one math op).
 video.addEventListener('timeupdate', () => {
