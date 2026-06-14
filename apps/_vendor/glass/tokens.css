@@ -1,0 +1,40 @@
+/* 星聚 · Liquid Glass — canonical tokens (orange brand).
+   Both apps re-point their own --ds-* / --brand vars onto these in Phases 1-2. */
+:root {
+  --font: "IBM Plex Sans SC", -apple-system, "PingFang SC", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", "SF Mono", ui-monospace, monospace;
+
+  /* accent + semantics — brand orange (was system green in the bundle) */
+  --accent: #ff5a36;
+  --accent-2: #d6431f;
+  --accent-glow: color-mix(in oklch, var(--accent) 55%, transparent);
+  --danger: #ff453a;
+  --warn: #ff9f0a;
+  --warn-glow: rgba(255,159,10,0.5);
+
+  /* vibrancy text (over glass) */
+  --t1: rgba(255,255,255,0.96);
+  --t2: rgba(255,255,255,0.66);
+  --t3: rgba(255,255,255,0.42);
+  --t4: rgba(255,255,255,0.26);
+
+  /* glass material */
+  --glass-blur: 32px;
+  --glass-fill: rgba(30,32,42,0.52);
+  --glass-fill-2: rgba(42,44,56,0.62);
+  --glass-fill-hi: rgba(74,78,94,0.66);
+  --hairline: rgba(255,255,255,0.12);
+
+  /* concentric radii */
+  --r-xl: 30px; --r-lg: 22px; --r-md: 15px; --r-sm: 10px;
+
+  /* density-driven rhythm */
+  --pad: 18px; --gap: 14px; --row: 13px; --fs: 14px;
+
+  /* float shadows */
+  --float: 0 2px 8px rgba(0,0,0,0.18), 0 18px 50px rgba(0,0,0,0.42);
+  --float-lo: 0 1px 4px rgba(0,0,0,0.20), 0 8px 24px rgba(0,0,0,0.30);
+}
+:root[data-density="compact"] {
+  --pad: 13px; --gap: 10px; --row: 9px; --fs: 13px; --glass-blur: 28px;
+}
