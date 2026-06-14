@@ -52,9 +52,14 @@
 
 /* ---- float the chassis: gaps + padding so the backdrop bleeds between ---- */
 .console-chassis {
-  gap: 12px;
-  padding: 12px;
+  gap: 8px;
+  padding: 8px;
   background: transparent;
+  /* Reclaim vertical budget so the viewport always shows the FULL transport
+     stack — play row + frame stepper (forward/back) + scrub — without
+     scrolling. The 40vh timeline row was starving the middle row under the
+     glass gaps; 34vh is plenty (the conductor scrolls for its lower tracks). */
+  grid-template-rows: 36px minmax(0, 1fr) minmax(0, 34vh) 42px;
 }
 
 /* ---- glass material on each chassis region ------------------------------- */
@@ -101,7 +106,7 @@
    eat vertical space, so trim the video from the chassis's 38vh a touch so
    play / Mark / frame-stepper / scrub all fit without scrolling
    (console.css's "transport controls stay visible without scrolling" rule). */
-.console #video { height: min(31vh, 320px) !important; }
+.console #video { height: min(27vh, 300px) !important; }
 
 /* ---- legibility over glass ---------------------------------------------- */
 /* chrome text gets a faint shadow so it survives bright backdrop patches
