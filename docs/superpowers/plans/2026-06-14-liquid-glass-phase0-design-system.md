@@ -155,7 +155,9 @@ def test_glass_css_served_orange_and_reset_free():
     # RESET-FREE: the bundle's global resets must NOT ship in the app-safe file,
     # or they will clobber the real apps' layout when linked in Phases 1-2.
     assert "* { margin: 0" not in body
-    assert "overflow: hidden" not in body  # bundle put this on body{}
+    # Scope to the bare body{} selector — component classes (.gl-stage, .sheen,
+    # .gl-panel, .gl-canvas-wrap) legitimately use overflow:hidden and must survive.
+    assert "\nbody {" not in body  # bundle put overflow:hidden on body{}
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
