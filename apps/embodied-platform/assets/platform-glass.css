@@ -217,9 +217,18 @@ body {
 /* rail items: keep them legible — transparent until hover/active. */
 .platform-workspace .module-rail button {
   color: var(--t2);
+  transition:
+    background-color 80ms var(--ease),
+    border-color 80ms var(--ease),
+    color 80ms var(--ease),
+    box-shadow 80ms var(--ease);
 }
 .platform-workspace .module-rail button .rail-icon {
   color: var(--t3);
+  transition-duration: 80ms;
+}
+.platform-workspace .module-rail button::before {
+  transition-duration: 90ms;
 }
 .platform-workspace .module-rail button:hover {
   background: rgba(255, 255, 255, 0.07);
@@ -1043,4 +1052,183 @@ body #login-form .login-field {
 }
 .platform-workspace .mon-gauge__dial > span {
   color: var(--t1); /* crisp mono reading on the inner glass disc */
+}
+
+/* ============================================================================
+   GLOBAL MATERIAL CORRECTION
+   The generated glass domains above drifted toward opaque dark cards with
+   heavy orange rails. This final layer is the design contract for every major
+   platform surface: translucent pane, visible backdrop refraction, thin
+   specular rim, and semantic accents only where they carry state.
+   ========================================================================== */
+:root {
+  --ops-glass-material: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.055) 36%,
+    rgba(17, 20, 29, 0.34) 100%
+  );
+  --ops-glass-material-dense: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0.065) 34%,
+    rgba(12, 14, 21, 0.48) 100%
+  );
+  --ops-glass-material-soft: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.045) 42%,
+    rgba(18, 21, 30, 0.24) 100%
+  );
+  --ops-glass-rim:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.105),
+    inset 0 -28px 48px rgba(0, 0, 0, 0.20);
+  --ops-glass-shadow:
+    0 18px 60px rgba(0, 0, 0, 0.30),
+    0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.platform-header.glass,
+.platform-workspace .module-rail.glass,
+.platform-workspace .summary-grid article.glass,
+.platform-workspace .module-panel.glass,
+.platform-workspace .mode-banner.glass,
+.platform-workspace .data-table,
+.platform-workspace .collection-summary,
+.platform-workspace .mon-tile,
+.platform-workspace .mon-gauge,
+.platform-header #login-form {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--ops-glass-material);
+  -webkit-backdrop-filter: blur(38px) saturate(180%) brightness(1.02);
+  backdrop-filter: blur(38px) saturate(180%) brightness(1.02);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    var(--ops-glass-shadow),
+    var(--ops-glass-rim);
+}
+
+.platform-header.glass,
+.platform-header #login-form {
+  background: var(--ops-glass-material-dense);
+}
+
+.platform-workspace .summary-grid article.glass,
+.platform-workspace .mon-tile {
+  background: var(--ops-glass-material-soft);
+}
+
+.platform-header.glass::before,
+.platform-workspace .module-rail.glass::before,
+.platform-workspace .summary-grid article.glass::before,
+.platform-workspace .module-panel.glass::before,
+.platform-workspace .mode-banner.glass::before,
+.platform-workspace .data-table::before,
+.platform-workspace .collection-summary::before,
+.platform-workspace .mon-tile::before,
+.platform-workspace .mon-gauge::before,
+.platform-header #login-form::before {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 92% at 0% 0%, rgba(255, 255, 255, 0.25), transparent 44%),
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.20) 0%,
+      transparent 30%,
+      rgba(255, 255, 255, 0.055) 64%,
+      rgba(255, 255, 255, 0.14) 100%
+    );
+  mix-blend-mode: screen;
+  opacity: 0.58;
+}
+
+.platform-header.glass > *,
+.platform-workspace .module-rail.glass > *,
+.platform-workspace .summary-grid article.glass > *,
+.platform-workspace .module-panel.glass > *,
+.platform-workspace .mode-banner.glass > *,
+.platform-workspace .data-table > *,
+.platform-workspace .collection-summary > *,
+.platform-workspace .mon-tile > *,
+.platform-workspace .mon-gauge > *,
+.platform-header #login-form > * {
+  position: relative;
+  z-index: 1;
+}
+
+.platform-workspace .summary-grid article.glass {
+  border-left-width: 1px;
+}
+
+.platform-workspace .summary-grid article.glass::after {
+  content: "";
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: 0;
+  z-index: 1;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.08), transparent);
+  opacity: 0.78;
+}
+
+.platform-workspace .module-rail button.active {
+  background: color-mix(in oklch, var(--accent) 16%, rgba(255, 255, 255, 0.08));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--accent) 38%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.platform-workspace .mode-banner.glass,
+.platform-workspace .mon-tile {
+  border-left-width: 2px;
+}
+
+.platform-workspace .data-table {
+  background: var(--ops-glass-material-dense);
+}
+
+/* CONTENT PANE PERFORMANCE TIER
+   Large scrollable panes are already layered over the glass backdrop and can
+   cover more than a million pixels. Keep the glass paint, but avoid live
+   backdrop sampling there so scrolling and module switching stay responsive. */
+.platform-workspace .module-panel.glass,
+.platform-workspace .data-table {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.platform-workspace .row.header {
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.platform-workspace .row:not(.header):not(.empty):hover {
+  background: color-mix(in oklch, var(--accent) 9%, rgba(255, 255, 255, 0.04));
+}
+
+.platform-workspace .collection-summary > div,
+.platform-workspace .mon-tile__bar,
+.platform-workspace .mon-gauge__track,
+body .form-grid input,
+body .form-grid select,
+body .action-row input,
+body .action-row select,
+body #login-form input,
+body #login-form select,
+body .btn-secondary {
+  background-color: rgba(255, 255, 255, 0.055);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }

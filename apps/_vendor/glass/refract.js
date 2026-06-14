@@ -39,6 +39,7 @@
       const opts = getOpts();
       const scale = opts.scale || 0;
       const fringe = opts.fringe || 0;
+      const maxArea = opts.maxArea || 160000;
       const on = opts.on && scale > 0;
       const els = Array.prototype.slice.call(root.querySelectorAll(".glass"));
       let html = "";
@@ -47,7 +48,11 @@
         if (!id) { id = "glr" + (++UID); el.setAttribute("data-refract", id); }
         if (!on) { el.style.backdropFilter = ""; el.style.webkitBackdropFilter = ""; return; }
         const w = el.offsetWidth, h = el.offsetHeight;
-        if (w < 8 || h < 8) return;
+        if (w < 8 || h < 8 || w * h > maxArea) {
+          el.style.backdropFilter = "";
+          el.style.webkitBackdropFilter = "";
+          return;
+        }
         const cs = getComputedStyle(el);
         const r = parseFloat(cs.borderTopLeftRadius) || 16;
         const minD = Math.min(w, h);
@@ -111,9 +116,9 @@
 (function () {
   var LEVELS = {
     off:      { on: false, scale: 0,  fringe: 0 },
-    light:    { on: true,  scale: 14, fringe: 1.5 },
-    standard: { on: true,  scale: 28, fringe: 3 },
-    strong:   { on: true,  scale: 44, fringe: 5 },
+    light:    { on: true,  scale: 14, fringe: 1.5, maxArea: 160000 },
+    standard: { on: true,  scale: 28, fringe: 3,   maxArea: 160000 },
+    strong:   { on: true,  scale: 44, fringe: 5,   maxArea: 160000 },
   };
   var KEY = "glass-refract-level";
   var level = localStorage.getItem(KEY) || "standard";   // default-on
