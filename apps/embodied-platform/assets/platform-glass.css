@@ -1,0 +1,1046 @@
+/* 星聚 · Liquid Glass — ops console skin. Additive layer over embodied-platform.css; mirrors the labeler. Load AFTER embodied-platform.css and /vendor/glass/{tokens,glass}.css. Generated from assets/glass-parts/. */
+
+/* ============================================================================
+   星聚 · 运营台 (ops console) — Liquid Glass reskin · CHROME domain
+   chassis + rail + header + backdrop. Strictly ADDITIVE: overrides existing
+   selectors only — no id/class/data-* hook renamed or removed. Loads AFTER
+   embodied-platform.css AND AFTER /vendor/glass/{tokens,glass}.css, so the
+   shared glass tokens (--accent, --glass-fill-2, --float, --r-lg, --t1..--t4,
+   --hairline) are available here and our rules win the cascade by source order.
+
+   Matches the sibling labeler's skin (apps/embodied-labeler/assets/console/
+   labeler-glass.css): calm graphite backdrop, frosted slabs with an INSET
+   box-shadow rim (not glass.css's absolute ::before/::after, which would scroll
+   away on overflow panels), brand-orange (--accent) for active/selected/focus.
+   Data legibility is preserved: only the PANEL frosts; table rows/numbers are
+   owned by the data domain and never get backdrop-filter here.
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   1 — BACKDROP : calm graphite world the glass refracts.
+   MIRRORS the labeler's .glass-backdrop exactly (same gradient stack + grain).
+   The integrator adds <div class="glass-backdrop" aria-hidden="true"></div> as
+   the first child of <body> (see htmlWiring).
+   --------------------------------------------------------------------------- */
+.glass-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  filter: brightness(var(--cc-bright, 1));
+  transition: filter 0.3s ease;
+  background:
+    radial-gradient(80% 80% at 30% 0%, rgba(70, 78, 96, 0.55), transparent 70%),
+    radial-gradient(70% 70% at 100% 100%, rgba(40, 46, 60, 0.70), transparent 70%),
+    linear-gradient(160deg, #16181f, #0c0d12);
+}
+.glass-backdrop::after { /* fine grain so the gradient doesn't band */
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+}
+
+/* let the backdrop show through: the page ground + its scanline grid go
+   transparent so the graphite world is what sits behind the floating slabs.
+   (embodied-platform.css sets body background-color + the grid image inline on
+   <body>; we out-specify the color with the same property and lift the grid.) */
+body {
+  background-color: transparent;
+  background-image: none;
+}
+
+/* ---------------------------------------------------------------------------
+   2 — WORKSPACE CHASSIS : float the panels.
+   The grid already gives gap:1rem / padding:1.1rem; we keep that rhythm and
+   make the ground transparent so the backdrop bleeds between the slabs.
+   --------------------------------------------------------------------------- */
+.platform-workspace {
+  background: transparent;
+  gap: 1rem;
+  padding: 1.1rem;
+}
+
+/* ---------------------------------------------------------------------------
+   3 — FROSTED-GLASS PANEL MATERIAL (the shared recipe).
+   Applied to the chassis regions that carry the `glass` class in markup
+   (header, rail, summary tiles, module panels, mode banner). We do NOT rely on
+   glass.css's .glass pseudo rim here — these regions scroll, so an absolutely
+   positioned ::before/::after rim would scroll away from the panel edge. We use
+   an INSET box-shadow rim instead (same move as the labeler skin).
+   --------------------------------------------------------------------------- */
+.platform-header.glass,
+.platform-workspace .module-rail.glass,
+.platform-workspace .summary-grid article.glass,
+.platform-workspace .module-panel.glass,
+.platform-workspace .mode-banner.glass {
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  border: 0;
+  border-radius: var(--r-lg);
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
+}
+
+/* Neutralize glass.css's absolute specular-rim ::before on glassed regions —
+   it would scroll away and double up with our inset rim. We selectively keep
+   ::after where the platform owns it for its OWN feature (the summary tile
+   instrument bar, re-asserted in §6); on the rest, the inner-glow ::after is
+   superseded by our inset shadow, so drop it too for a clean edge. */
+.platform-header.glass::before,
+.platform-header.glass::after,
+.platform-workspace .module-rail.glass::before,
+.platform-workspace .module-rail.glass::after,
+.platform-workspace .module-panel.glass::before,
+.platform-workspace .module-panel.glass::after,
+.platform-workspace .mode-banner.glass::before {
+  display: none;
+}
+/* summary tiles: kill only glass.css's rim ::before; the tile's own ::after
+   (instrument bar) is more specific (.summary-grid article::after) and survives. */
+.platform-workspace .summary-grid article.glass::before {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   4 — HEADER : brand mark, app-switcher, status pill, login zone → glass chrome.
+   The header is sticky; the slab reads as denser chrome over the busiest part
+   of the backdrop. Keep its layout (flex/sticky) from embodied-platform.css.
+   --------------------------------------------------------------------------- */
+.platform-header.glass {
+  /* drop the old gradient + hairline border; the glass fill + inset rim replace
+     them. Sticky/flex/padding stay as authored. */
+  border-bottom: 0;
+}
+
+/* chrome labels that float over the backdrop get a faint shadow so they survive
+   bright graphite patches (the adaptive-legibility lesson from the labeler). */
+.platform-header h1,
+.platform-header .eyebrow,
+.app-switcher > a,
+.app-switcher > span,
+.status-pill,
+#principal-label {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* brand mark → frosted chip on the glass (was a flat surface tile). */
+.platform-header .brand-mark {
+  border: 0;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  color: var(--t1);
+}
+
+/* app switcher (运营台 | 标注台) → translucent segmented control; current = orange. */
+.platform-header .app-switcher {
+  border: 0;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+}
+.platform-header .app-switcher > * + * {
+  border-left-color: rgba(255, 255, 255, 0.10);
+}
+.platform-header .app-switcher > a,
+.platform-header .app-switcher > span {
+  color: var(--t2);
+}
+.platform-header .app-switcher a:hover {
+  color: var(--t1);
+  background: rgba(255, 255, 255, 0.08);
+}
+/* active workspace = brand orange wash + white ink (the primary/active cue). */
+.platform-header .app-switcher [aria-current="page"] {
+  background: color-mix(in oklch, var(--accent) 26%, transparent);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 50%, transparent);
+}
+
+/* eyebrow keeps its uppercase rhythm but takes vibrancy ink over glass. */
+.platform-header .eyebrow {
+  color: var(--accent);
+}
+
+/* status pill (#api-status) → frosted pill. KEEP the semantic .live/.offline
+   status colors (do NOT orange-ize meaning); only restyle the resting shell. */
+.platform-header .status-pill {
+  border: 0;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  color: var(--t2);
+}
+/* .live / .offline tint their border via color-mix on --edge-strong in the base
+   sheet; re-assert as an inset ring so the frosted shell shows the status edge. */
+.platform-header .status-pill.live {
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--st-ok) 45%, transparent);
+}
+.platform-header .status-pill.offline {
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--st-warn) 45%, transparent);
+}
+
+/* login zone: signed-in principal pill → frosted chip; the popover form reads
+   as a floating glass card (it's absolutely positioned, not a scroll panel, so
+   it can use a real backdrop-filter). */
+.platform-header #principal-label {
+  border: 0;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  color: var(--t1);
+}
+.platform-header #login-form {
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+}
+
+/* ---------------------------------------------------------------------------
+   5 — MODULE RAIL : frosted glass rail; active module indicator → orange.
+   The rail is sticky and scrolls on narrow widths; the .glass slab + inset rim
+   carry the frost. Keep the flex/sticky layout from embodied-platform.css.
+   --------------------------------------------------------------------------- */
+.platform-workspace .module-rail.glass {
+  padding: 0.55rem;
+}
+
+/* rail items: keep them legible — transparent until hover/active. */
+.platform-workspace .module-rail button {
+  color: var(--t2);
+}
+.platform-workspace .module-rail button .rail-icon {
+  color: var(--t3);
+}
+.platform-workspace .module-rail button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--t1);
+}
+.platform-workspace .module-rail button:hover .rail-icon {
+  color: var(--t1);
+}
+
+/* ACTIVE rail item → brand-orange wash + white ink (was the teal --brand tint).
+   The ::before bar already reads --accent in the base sheet; we keep it and warm
+   the fill/ink to match the labeler's orange "selected" convention. */
+.platform-workspace .module-rail button.active {
+  background: color-mix(in oklch, var(--accent) 20%, transparent);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 42%, transparent);
+}
+.platform-workspace .module-rail button.active .rail-icon {
+  color: #fff;
+}
+/* the active orange tab bar (::before) is authored in the base sheet on
+   var(--accent) — it already matches; nothing to override. */
+
+/* ---------------------------------------------------------------------------
+   6 — SUMMARY (KPI) TILES : frosted instrument tiles.
+   The tile keeps its left brand rule + base instrument bar; we warm both to the
+   brand orange so the KPI accent matches the rest of the glass skin, and keep
+   the big mono numerals crisp (no blur on content — only the slab frosts).
+   --------------------------------------------------------------------------- */
+.platform-workspace .summary-grid article.glass {
+  /* the slab frosts via §3; re-color the brand left-rule to orange. */
+  border-left: 3px solid var(--accent);
+}
+/* re-assert the tile's own instrument bar (::after) in brand orange. This both
+   beats glass.css's .glass::after inner-glow AND keeps the platform's feature. */
+.platform-workspace .summary-grid article.glass::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 55%, transparent 100%);
+  opacity: 0.6;
+}
+/* KPI eyebrow + numerals stay crisp; add a faint chrome shadow to the label. */
+.platform-workspace .summary-grid article.glass span {
+  color: var(--t2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.platform-workspace .summary-grid article.glass strong {
+  color: var(--t1);
+}
+
+/* ---------------------------------------------------------------------------
+   7 — MODULE PANELS : frosted container; inner head hairline softens.
+   Only the PANEL frosts. The data tables, forms and tags inside keep their own
+   readable surfaces (owned by the data/forms domains) — no blur on content.
+   --------------------------------------------------------------------------- */
+.platform-workspace .module-panel.glass {
+  padding: 1.2rem 1.25rem 1.3rem;
+}
+/* panel heading → brighter vibrancy ink; the head divider softens to a hairline
+   over glass instead of the opaque --edge line. */
+.platform-workspace .module-panel.glass h2 {
+  color: var(--t1);
+}
+.platform-workspace .module-panel.glass .eyebrow {
+  color: var(--accent);
+}
+.platform-workspace .module-panel.glass .panel-head {
+  border-bottom-color: var(--hairline);
+}
+
+/* ---------------------------------------------------------------------------
+   8 — MODE BANNER : frosted status strip. KEEP the semantic left-rule colors
+   (.warning / .offline / .loading) — they carry meaning, do NOT orange-ize.
+   --------------------------------------------------------------------------- */
+.platform-workspace .mode-banner.glass {
+  padding: 0.7rem 0.9rem;
+  color: var(--t1);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+/* the inset rim replaces the box border; reinstate ONLY the meaningful colored
+   left rule as an inset stripe so semantic state stays visible over glass. */
+.platform-workspace .mode-banner.glass {
+  border-left: 3px solid var(--ink-faint);
+}
+.platform-workspace .mode-banner.glass.warning {
+  border-left-color: var(--st-warn);
+}
+.platform-workspace .mode-banner.glass.offline {
+  border-left-color: var(--brand);
+}
+.platform-workspace .mode-banner.glass.loading {
+  border-left-color: var(--st-info);
+}
+
+/* ---------------------------------------------------------------------------
+   9 — MOTION : gentle staggered rise on load (transform-only; never hides, so a
+   frozen frame is always visible). Mirrors the labeler's glass-rise timing and
+   complements the base sheet's panel-rise. Respects reduced-motion.
+   --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .platform-header.glass    { animation: glass-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+  .module-rail.glass        { animation: glass-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.04s backwards; }
+  .summary-grid article.glass:nth-child(1) { animation: glass-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.08s backwards; }
+  .summary-grid article.glass:nth-child(2) { animation: glass-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.12s backwards; }
+  .summary-grid article.glass:nth-child(3) { animation: glass-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.16s backwards; }
+  .summary-grid article.glass:nth-child(4) { animation: glass-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.20s backwards; }
+  .module-panel.glass.active { animation: glass-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.24s backwards; }
+}
+@keyframes glass-rise {
+  from { transform: translateY(10px) scale(0.992); }
+  to   { transform: none; }
+}
+/* ============================================================================
+   星聚 · 运营台 — Liquid Glass skin · DOMAIN: module panels + KPI summary tiles
+   Additive reskin. Loads AFTER embodied-platform.css and AFTER
+   /vendor/glass/tokens.css + /vendor/glass/glass.css, so these rules OVERRIDE
+   the chassis surfaces by cascade order + .platform-workspace scope (0,2,x beats
+   the base 0,1,x). No id/class/data-* hook renamed or removed; no !important.
+
+   Matches the sibling labeler skin (apps/embodied-labeler/assets/console/
+   labeler-glass.css): frosted floating slabs, an inset box-shadow rim (NOT
+   ::before/::after — panels can overflow/scroll, a positioned pseudo would
+   drift off the panel edge), brand-orange accents (--accent), brighter
+   vibrancy ink (--t1) on titles. The 6 semantic --st-* status colors are left
+   untouched so data-status meaning never reads as "primary".
+
+   Out of scope (left to other domains / the base sheet): tables (.data-table /
+   .row stay opaque var(--surface) so dense data stays CRISP — no blur on
+   content), the module rail, forms, and all motion (the base sheet already
+   runs panel-rise + a reduced-motion guard; we do not re-animate).
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   Module panels (.module-panel ×11) → frosted floating glass slabs.
+   .platform-workspace scope out-specifies the base
+   `.summary-grid article, .module-panel { background; border }` rule.
+   We touch ONLY material props (bg / backdrop-filter / border / radius /
+   box-shadow) — never `display`, so the base
+   .module-panel{display:none} / .module-panel.active{display:block}
+   visibility toggle keeps working (otherwise every panel would show at once).
+   --------------------------------------------------------------------------- */
+.platform-workspace .module-panel {
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  border: 0;
+  border-radius: var(--r-lg);
+  /* inset rim instead of a positioned pseudo: survives panel overflow/scroll */
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
+}
+
+/* panel-head divider was a solid --edge hairline on an opaque ground; soften to
+   a translucent rule so it reads as part of the frosted slab */
+.platform-workspace .module-panel .panel-head {
+  border-bottom-color: rgba(255, 255, 255, 0.10);
+}
+
+/* Panel section title → brighter vibrancy ink + a faint shadow so it survives
+   bright backdrop patches (the adaptive-legibility lesson from the labeler). */
+.platform-workspace .module-panel h2 {
+  color: var(--t1);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* the panel-head eyebrow now sits over the translucent slab — give it the same
+   faint legibility shadow. Keep its teal-lum color (it is not a primary/active
+   state, so it must NOT be orange-ized). */
+.platform-workspace .module-panel .panel-head .eyebrow {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.40);
+}
+
+/* ---------------------------------------------------------------------------
+   KPI summary tiles (.summary-grid article ×4) → glass tiles with an
+   orange accent bar. Tiles do NOT scroll, so the existing ::after bottom bar
+   is safe to keep as the accent (re-colored teal→orange). We also recolor the
+   base teal `border-left` to orange via inset box-shadow (respects the 22px
+   radius — a hard border-left would clip square at the rounded corner).
+   --------------------------------------------------------------------------- */
+.platform-workspace .summary-grid article {
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  border: 0;
+  border-radius: var(--r-lg);
+  /* float + rim, plus a 3px orange left-accent inset (radius-safe) */
+  box-shadow:
+    var(--float),
+    inset 3px 0 0 var(--accent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
+}
+
+/* base ::after is the teal instrument bar (0,1,2) — out-specify (0,2,2) and
+   re-cast it as the orange brand gradient */
+.platform-workspace .summary-grid article::after {
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 55%, transparent 100%);
+  opacity: 0.7;
+}
+
+/* tile eyebrow label → vibrancy muted ink + faint shadow over the frost */
+.platform-workspace .summary-grid article span {
+  color: var(--t2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* the big metric number → bright vibrancy ink so it stays crisp on the slab
+   (kept tabular via the base sheet; we only adjust color + a hairline shadow) */
+.platform-workspace .summary-grid article strong {
+  color: var(--t1);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.40);
+}
+/* ============================================================================
+   星聚 · 运营台 — Liquid Glass skin · CONTROLS (buttons + forms)
+   Additive reskin: OVERRIDES existing selectors only. No class/id/data-* hook
+   is renamed or removed — embodied-platform.js binds to all of them. Loads
+   AFTER embodied-platform.css and AFTER /vendor/glass/tokens.css + glass.css,
+   so the glass tokens (--accent / --accent-2 / --glass-fill* / --float / radii)
+   are resolved here.
+
+   Cascade strategy: the base button/field rules in embodied-platform.css carry
+   NO !important, but buttons live in BOTH .platform-header (login zone, 重置/刷新)
+   AND .platform-workspace (every module action). To skin the WHOLE app
+   consistently — and to deterministically out-rank the base class rules (0,1,0)
+   regardless of source-order fragility — every rule below is prefixed with
+   `body` (raising specificity one id-less notch). Matches the sibling labeler's
+   orange-glass conventions: orange gradient + glow for primary/active, frosted
+   translucent for secondary/ghost, dark translucent fields with an orange focus
+   ring. The 6 semantic --st-* status colors are NOT touched (danger keeps red).
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   Buttons — shared chrome
+   Keep the 36px anatomy from spec §4 (height/padding/radius live on the base
+   rule; we only restyle surface + ink + motion). A faint text-shadow keeps the
+   label crisp where a button floats over a bright backdrop patch.
+   --------------------------------------------------------------------------- */
+body .btn-primary,
+body .btn-secondary,
+body .btn-danger,
+body .btn-ghost {
+  border: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition:
+    background-color var(--motion-fast, 120ms) var(--ease, ease),
+    box-shadow var(--motion-fast, 120ms) var(--ease, ease),
+    transform var(--motion-fast, 120ms) var(--ease, ease);
+}
+
+/* Primary — orange glass gradient + glow (创建/保存/启动 class of actions) ---- */
+body .btn-primary {
+  background: linear-gradient(160deg, var(--accent), var(--accent-2));
+  color: #fff;
+  box-shadow:
+    0 5px 16px color-mix(in oklch, var(--accent) 40%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+}
+body .btn-primary:hover {
+  /* brighten the fill in place; deepen the glow */
+  background: linear-gradient(160deg,
+    color-mix(in srgb, var(--accent) 88%, #fff),
+    color-mix(in srgb, var(--accent-2) 90%, #fff));
+  color: #fff;
+  box-shadow:
+    0 7px 22px color-mix(in oklch, var(--accent) 48%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* Secondary — frosted translucent: rgba white fill + hairline rim (刷新/退回) - */
+body .btn-secondary {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+body .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.20);
+}
+
+/* Ghost — borderless, tint on hover (icon / rail-adjacent) ------------------ */
+body .btn-ghost {
+  background: transparent;
+  color: var(--ink-muted);
+  box-shadow: none;
+}
+body .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+/* Danger — KEEP semantic danger red, just frost it (destructive 重置/取消/失败).
+   Base rule uses --st-danger (#e8746a, a pale fill) with dark ink for contrast;
+   we preserve that law — a translucent danger wash + dark ink + danger rim. --- */
+body .btn-danger {
+  background: color-mix(in srgb, var(--st-danger) 80%, transparent);
+  color: #101214;
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--st-danger) 32%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px color-mix(in srgb, var(--st-danger) 50%, transparent);
+  text-shadow: none; /* dark ink on a pale fill — no shadow needed */
+}
+body .btn-danger:hover {
+  background: color-mix(in srgb, var(--st-danger) 92%, transparent);
+  color: #101214;
+  box-shadow:
+    0 6px 18px color-mix(in srgb, var(--st-danger) 40%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 0 0 1px color-mix(in srgb, var(--st-danger) 60%, transparent);
+}
+
+/* disabled primary/danger: null the gradient glow. Base button:disabled sets
+   box-shadow:none at EQUAL specificity (0,1,1) but loads earlier, so our glow
+   would otherwise leak through the 0.45 opacity — re-assert none here. */
+body .btn-primary:disabled,
+body .btn-danger:disabled {
+  box-shadow: none;
+}
+
+/* press feedback (base button:active sets transform; add a subtle scale sink) */
+body .btn-primary:active:not(:disabled),
+body .btn-secondary:active:not(:disabled),
+body .btn-danger:active:not(:disabled),
+body .btn-ghost:active:not(:disabled) {
+  transform: translateY(0.5px) scale(0.985);
+}
+
+/* focus ring → orange (was --brand-lum). Keep the offset ring; data-table cells
+   never carry .btn-*, so this only warms control focus. */
+body .btn-primary:focus-visible,
+body .btn-secondary:focus-visible,
+body .btn-danger:focus-visible,
+body .btn-ghost:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Form fields — .form-grid / .action-row inputs & selects + login dialog
+   Translucent dark instrument surfaces (rgba(0,0,0,.22)) so dense mono values
+   stay crisp (NO blur on field content), hairline border, orange focus ring.
+   Preserve the 38px min-height (spec control height) from the base rule.
+   --------------------------------------------------------------------------- */
+body .form-grid input,
+body .form-grid select,
+body .action-row input,
+body .action-row select,
+body #login-form input,
+body #login-form select {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* background-COLOR (not the shorthand): the shorthand would reset the select
+     caret background-image set below. */
+  background-color: rgba(0, 0, 0, 0.22);
+  color: var(--ink);
+  /* null the label's text-shadow (set below) so it never bleeds into the dense
+     mono VALUE — crisp data is non-negotiable. */
+  text-shadow: none;
+  transition:
+    border-color var(--motion-fast, 120ms) var(--ease, ease),
+    box-shadow var(--motion-fast, 120ms) var(--ease, ease),
+    background-color var(--motion-fast, 120ms) var(--ease, ease);
+}
+
+body .form-grid input:hover:not(:disabled),
+body .form-grid select:hover:not(:disabled),
+body .action-row input:hover:not(:disabled),
+body .action-row select:hover:not(:disabled),
+body #login-form input:hover:not(:disabled),
+body #login-form select:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+  background-color: rgba(0, 0, 0, 0.28);
+}
+
+/* orange focus ring: warm border + soft glow, replacing the teal --brand-lum
+   outline for these fields (the base :focus-visible only changed border-color) */
+body .form-grid input:focus,
+body .form-grid select:focus,
+body .action-row input:focus,
+body .action-row select:focus,
+body #login-form input:focus,
+body #login-form select:focus,
+body .form-grid input:focus-visible,
+body .form-grid select:focus-visible,
+body .action-row input:focus-visible,
+body .action-row select:focus-visible,
+body #login-form input:focus-visible,
+body #login-form select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background-color: rgba(0, 0, 0, 0.30);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* recolor the native-looking select caret to the vibrancy ink so it reads on
+   the darker translucent field (base draws it with --ink-muted) */
+body .form-grid select,
+body .action-row select,
+body #login-form select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--t2) 50%),
+    linear-gradient(135deg, var(--t2) 50%, transparent 50%);
+  background-position: calc(100% - 16px) calc(50% - 2px), calc(100% - 11px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+body .form-grid input::placeholder,
+body .action-row input::placeholder,
+body #login-form input::placeholder {
+  color: var(--t3);
+}
+
+/* ---------------------------------------------------------------------------
+   Field labels — faint chrome text-shadow so the 0.74rem caption survives a
+   bright backdrop patch once the panels frost. text-shadow inherits, so the
+   field rules above explicitly reset it to none — the dense mono VALUE stays
+   crisp; only the caption carries the shadow.
+   --------------------------------------------------------------------------- */
+body .form-grid > label,
+body .action-row > label,
+body #login-form .login-field {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+/* ===========================================================================
+   星聚 运营台 · Liquid Glass — DATA TABLES + STATUS TAGS
+   Additive reskin. Loads AFTER embodied-platform.css and AFTER the vendor
+   glass tokens/material. OVERRIDES existing selectors only; renames nothing.
+   JS hooks preserved: table() emits .data-table > .row(.header/.empty) with
+   span[role=cell] > .cell-label + .cell-value; tag() emits .tag.tag--{token}.
+
+   CASCADE NOTES (read /assets/embodied-platform.css for the originals):
+   - Scoped with .platform-workspace to win on specificity alone — NO !important
+     is needed on any visual property here. The only !important in the original
+     data rules is grid-template-columns on .row.empty / responsive .row, which
+     this file never touches.
+   - The one specificity trap: the original hover is
+       .row:not(.header):not(.empty):hover            (0,4,0)
+     so the orange hover must be written as
+       .platform-workspace .row:not(.header):not(.empty):hover   (0,5,0)
+     or the plain white hover would win despite load order.
+
+   LEGIBILITY LAW: backdrop-filter (blur) lives ONLY on the .data-table PANEL
+   and the .collection-summary container. Rows, the header, and tags get a
+   translucent FILL that lets the panel's blur show through — they carry NO
+   filter of their own, so dense .cell-value numbers and tag text stay crisp.
+   text-shadow is added to CHROME labels (.row.header) only, never to data cells.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   Data table — frost the PANEL (this is the only blurred surface). Rounded
+   glass slab; keeps the original overflow:hidden so rows clip to the radius.
+   --------------------------------------------------------------------------- */
+.platform-workspace .data-table {
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  border: 0;
+  border-radius: var(--r-lg);
+  /* scrolling panel: inset box-shadow rim (NOT a positioned pseudo, which would
+     scroll away). Matches the labeler's frosted-panel recipe. */
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
+}
+
+/* ---------------------------------------------------------------------------
+   Rows — readable on the translucent panel. Row separators soften to a
+   hairline of light; content carries NO blur.
+   --------------------------------------------------------------------------- */
+.platform-workspace .row {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* keep the first body/header row flush with the panel's top rim */
+.platform-workspace .row:first-child {
+  border-top: 0;
+}
+
+/* dense numerics stay crisp on the glass — no text-shadow, brighter ink */
+.platform-workspace .cell-value {
+  color: var(--t1);
+}
+
+/* ---------------------------------------------------------------------------
+   Header row — frosted-reading chrome (translucent fill, NOT its own blur);
+   labels get a faint shadow so they survive bright backdrop patches.
+   Out-specifies the original .row.header (0,2,0) at (0,3,0).
+   --------------------------------------------------------------------------- */
+.platform-workspace .row.header {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--t2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------------------------------------------------------------------------
+   Hover — subtle orange tint. MUST replicate the original guard chain to win:
+   .platform-workspace .row:not(.header):not(.empty):hover  (0,5,0)
+   beats the original .row:not(.header):not(.empty):hover    (0,4,0).
+   --------------------------------------------------------------------------- */
+.platform-workspace .row:not(.header):not(.empty):hover {
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   Selected row (aria-selected="true") — orange tint + left accent bar.
+   Forward-looking: no JS sets this on rows today, so it is a safe no-op until
+   selection ships. The bar is a SEPARATE property (inset box-shadow) from the
+   background, so a row that is both selected AND hovered keeps its bar even
+   though the (0,5,0) hover tint paints over the selected fill.
+   --------------------------------------------------------------------------- */
+.platform-workspace .row[aria-selected="true"] {
+  background: color-mix(in oklch, var(--accent) 22%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+   Empty state — sits on the same glass panel; keep it quiet and centered.
+   (Original .row.empty owns its grid-template-columns:1fr !important — untouched.)
+   --------------------------------------------------------------------------- */
+.platform-workspace .row.empty {
+  color: var(--t3);
+}
+
+.platform-workspace .row.empty .cell-value,
+.platform-workspace .row.empty > span {
+  color: var(--t3);
+}
+
+/* ---------------------------------------------------------------------------
+   Collection summary readout — frost the CONTAINER (its own blur is fine here:
+   it holds short labels + values, not a dense data grid). Values stay crisp.
+   --------------------------------------------------------------------------- */
+.platform-workspace .collection-summary {
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  border: 0;
+  border-radius: var(--r-lg);
+  padding: 0.85rem 1rem;
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
+}
+
+.platform-workspace .collection-summary span {
+  color: var(--t2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.platform-workspace .collection-summary strong {
+  color: var(--t1);
+}
+
+/* ===========================================================================
+   Status tags (.tag + .tag--{neutral,info,ok,warn,danger,faint})
+   Glass chips: translucent fill + inset rim (modeled on the labeler's
+   .skill-pill), NO backdrop-filter so chip text stays crisp. Each chip KEEPS
+   its semantic --st-* color — never orange-ized. The ::before dot rides on
+   currentColor, so re-asserting `color` per modifier re-tints the dot too.
+   =========================================================================== */
+.platform-workspace .tag {
+  border: 0;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+}
+
+/* semantic tints — fill + rim mixed from the status token, color preserved so
+   the dot (currentColor) and label stay on-meaning. */
+.platform-workspace .tag--neutral {
+  color: var(--st-neutral);
+  background: color-mix(in oklch, var(--st-neutral) 16%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--st-neutral) 45%, transparent);
+}
+
+.platform-workspace .tag--info {
+  color: var(--st-info);
+  background: color-mix(in oklch, var(--st-info) 16%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--st-info) 45%, transparent);
+}
+
+.platform-workspace .tag--ok {
+  color: var(--st-ok);
+  background: color-mix(in oklch, var(--st-ok) 16%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--st-ok) 45%, transparent);
+}
+
+.platform-workspace .tag--warn {
+  color: var(--st-warn);
+  background: color-mix(in oklch, var(--st-warn) 16%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--st-warn) 45%, transparent);
+}
+
+.platform-workspace .tag--danger {
+  color: var(--st-danger);
+  background: color-mix(in oklch, var(--st-danger) 16%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--st-danger) 45%, transparent);
+}
+
+/* faint = lowest-priority, no status hue: stays a plain glass chip */
+.platform-workspace .tag--faint {
+  color: var(--t3);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.10);
+}
+/* ============================================================================
+   星聚 · 运营台 · Liquid Glass — 监控看板 / Monitoring board + gauges
+   ----------------------------------------------------------------------------
+   Domain: #monitoring-board (.mon-board / .mon-tile) + the sim_success_rate
+   gauge (.mon-gauge) + any meter/progress bars.
+
+   ADDITIVE reskin. Loads AFTER embodied-platform.css and AFTER
+   /vendor/glass/tokens.css + glass.css, so it OVERRIDES the chassis rules by
+   selector cascade. No id/class/data-* hook is renamed or removed — only paint.
+
+   Cascade note: the base .mon-* rules carry NO !important, so a
+   .platform-workspace-scoped compound selector (higher specificity, later in
+   the cascade) wins cleanly without needing !important anywhere here.
+
+   LEGIBILITY / STATUS contract (non-negotiable):
+   - The metric VALUE digits and labels stay crisp — NO backdrop-filter sits on
+     tile content. We frost the PANEL material; numbers ride a readable surface.
+   - The 6 semantic status colors (--st-*) keep their MEANING: tile status
+     rails, mini-bars, and the gauge's danger→warn→ok fill are data status and
+     stay semantic. Orange (--accent) is reserved for generic / non-semantic
+     meters (e.g. the radial dial arc) and chrome accents only.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   Board grid — just a touch more air between the floating glass tiles
+   --------------------------------------------------------------------------- */
+.platform-workspace .mon-board {
+  gap: var(--gap);
+}
+
+/* ---------------------------------------------------------------------------
+   Metric tile → frosted glass slab
+   The frosted-panel recipe with an INSET box-shadow rim (no ::before/::after
+   pseudo — panels can scroll, a positioned pseudo would drift off the edge).
+   border-left status rail is preserved as the semantic accent edge.
+   --------------------------------------------------------------------------- */
+.platform-workspace .mon-tile {
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  border: 0;
+  border-left: 3px solid var(--st-neutral); /* re-state: semantic status rail */
+  border-radius: var(--r-md);
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
+}
+.platform-workspace .mon-tile:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
+}
+
+/* keep the semantic status rail meaning on the glass tile (info/ok/warn/...) */
+.platform-workspace .mon-tile--info { border-left-color: var(--st-info); }
+.platform-workspace .mon-tile--ok { border-left-color: var(--st-ok); }
+.platform-workspace .mon-tile--warn { border-left-color: var(--st-warn); }
+.platform-workspace .mon-tile--danger { border-left-color: var(--st-danger); }
+.platform-workspace .mon-tile--neutral { border-left-color: var(--st-neutral); }
+
+/* ---------------------------------------------------------------------------
+   Tile content — vibrancy text, kept CRISP (no blur on content)
+   Chrome label sits over the backdrop, so it gets a faint legibility shadow.
+   The big value uses the bright vibrancy ink and a soft shadow so the digits
+   survive bright backdrop patches; NO text-shadow blur that smears numerals.
+   --------------------------------------------------------------------------- */
+.platform-workspace .mon-tile__label {
+  color: var(--t2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.platform-workspace .mon-tile__value {
+  color: var(--t1); /* crisp mono digits — no text-shadow (rides the tile fill) */
+}
+.platform-workspace .mon-tile__value .mon-unit {
+  color: var(--t3);
+}
+
+/* ---------------------------------------------------------------------------
+   Mini bar — frosted translucent track + semantic fill with a soft glow
+   Fill colour stays SEMANTIC (status meaning). The track has overflow:hidden
+   (base rule), so an OUTSET bloom would be clipped to nothing — instead the
+   fill carries an INSET coloured bloom + a glass highlight cap, which reads as
+   a luminous fill and survives the clip.
+   --------------------------------------------------------------------------- */
+.platform-workspace .mon-tile__bar {
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.10),
+    inset 0 1px 2px rgba(0, 0, 0, 0.30);
+}
+.platform-workspace .mon-tile__bar > span {
+  background: var(--st-neutral);
+  box-shadow:
+    inset 0 0 7px color-mix(in oklch, var(--st-neutral) 70%, white),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.platform-workspace .mon-tile--info .mon-tile__bar > span {
+  background: var(--st-info);
+  box-shadow:
+    inset 0 0 7px color-mix(in oklch, var(--st-info) 70%, white),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.platform-workspace .mon-tile--ok .mon-tile__bar > span {
+  background: var(--st-ok);
+  box-shadow:
+    inset 0 0 7px color-mix(in oklch, var(--st-ok) 70%, white),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.platform-workspace .mon-tile--warn .mon-tile__bar > span {
+  background: var(--st-warn);
+  box-shadow:
+    inset 0 0 7px color-mix(in oklch, var(--st-warn) 70%, white),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.platform-workspace .mon-tile--danger .mon-tile__bar > span {
+  background: var(--st-danger);
+  box-shadow:
+    inset 0 0 7px color-mix(in oklch, var(--st-danger) 70%, white),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.platform-workspace .mon-tile--neutral .mon-tile__bar > span {
+  background: var(--st-neutral);
+  box-shadow:
+    inset 0 0 7px color-mix(in oklch, var(--st-neutral) 70%, white),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* ---------------------------------------------------------------------------
+   Horizontal gauge (sim_success_rate) → frosted glass panel
+   Same frosted recipe as the tiles; spans the full board width (base rule).
+   --------------------------------------------------------------------------- */
+.platform-workspace .mon-gauge {
+  background: var(--glass-fill-2);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%) brightness(0.95);
+  border: 0;
+  border-radius: var(--r-lg);
+  box-shadow:
+    var(--float),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -20px 44px rgba(0, 0, 0, 0.22);
+}
+
+.platform-workspace .mon-gauge__label {
+  color: var(--t2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.platform-workspace .mon-gauge__value {
+  color: var(--t1); /* crisp mono reading — no text-shadow */
+}
+.platform-workspace .mon-gauge__scale {
+  color: var(--t3);
+}
+
+/* gauge track → frosted, recessed channel with a soft inner shadow */
+.platform-workspace .mon-gauge__track {
+  background: rgba(0, 0, 0, 0.30);
+  border: 0;
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.10),
+    inset 0 1px 3px rgba(0, 0, 0, 0.34);
+}
+
+/* gauge fill stays SEMANTIC (danger→warn→ok) — it encodes the pass rate.
+   Track has overflow:hidden, so the bloom is INSET (an outset shadow would be
+   clipped); a glass highlight cap reads the fill as a lit glass ribbon. */
+.platform-workspace .mon-gauge__fill {
+  box-shadow:
+    inset 0 0 10px rgba(255, 255, 255, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+/* ---------------------------------------------------------------------------
+   Radial-dial variant — a GENERIC progress arc (not a semantic status tag),
+   so this one takes the brand ORANGE accent with a soft glow, matching the
+   "meters/progress → accent fill with a soft glow" convention.
+   --------------------------------------------------------------------------- */
+.platform-workspace .mon-gauge__dial {
+  background:
+    conic-gradient(var(--accent) calc(var(--gauge) * 360deg), rgba(0, 0, 0, 0.30) 0);
+  filter: drop-shadow(0 0 12px var(--accent-glow));
+}
+.platform-workspace .mon-gauge__dial::before {
+  background: var(--glass-fill);
+  border: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.platform-workspace .mon-gauge__dial > span {
+  color: var(--t1); /* crisp mono reading on the inner glass disc */
+}

@@ -7,10 +7,14 @@
   <title>星聚 · 具身平台运营台</title>
   <link rel="manifest" href="assets/manifest.webmanifest">
   <link rel="stylesheet" href="/vendor/fonts/plex.css">
-  <link rel="stylesheet" href="assets/embodied-platform.css?v=20">
+  <link rel="stylesheet" href="assets/embodied-platform.css?v=21">
+  <link rel="stylesheet" href="/vendor/glass/tokens.css">
+  <link rel="stylesheet" href="/vendor/glass/glass.css">
+  <link rel="stylesheet" href="assets/platform-glass.css?v=1">
 </head>
 <body>
-  <header class="platform-header">
+  <div class="glass-backdrop" aria-hidden="true"></div>
+  <header class="platform-header glass">
     <div class="header-brand">
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -67,7 +71,7 @@
   </header>
 
   <main class="platform-workspace">
-    <nav class="module-rail" aria-label="具身平台模块">
+    <nav class="module-rail glass" aria-label="具身平台模块">
       <button type="button" data-module="data-management" class="active"><span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.66 3.13 3 7 3s7-1.34 7-3V6"></path><path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3"></path></svg></span>数据</button>
       <button type="button" data-module="collection"><span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="m9 8 1.6 1.6L15 5.5"></path><path d="M8 14h8"></path><path d="M8 18h5"></path></svg></span>采集</button>
       <button type="button" data-module="annotation"><span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4 5 5L9 20H4v-5L15 4Z"></path><path d="m13 6 5 5"></path></svg></span>标注</button>
@@ -82,27 +86,27 @@
     </nav>
 
     <section class="summary-grid" aria-label="平台概览">
-      <article>
+      <article class="glass">
         <span>数据集</span>
         <strong id="metric-datasets">0</strong>
       </article>
-      <article>
+      <article class="glass">
         <span>排队任务</span>
         <strong id="metric-queued">0</strong>
       </article>
-      <article>
+      <article class="glass">
         <span>运行任务</span>
         <strong id="metric-running">0</strong>
       </article>
-      <article>
+      <article class="glass">
         <span>学习队列</span>
         <strong id="metric-learning">0</strong>
       </article>
     </section>
 
-    <section id="mode-banner" class="mode-banner" role="status" aria-live="polite" hidden></section>
+    <section id="mode-banner" class="mode-banner glass" role="status" aria-live="polite" hidden></section>
 
-    <section id="data-management-panel" class="module-panel active" data-module="data-management">
+    <section id="data-management-panel" class="module-panel active glass" data-module="data-management">
       <div class="panel-head">
         <div>
           <p class="eyebrow">多模态数据管理</p>
@@ -138,7 +142,7 @@
       <div id="episodes-list" class="data-table"></div>
     </section>
 
-    <section id="collection-panel" class="module-panel" data-module="collection">
+    <section id="collection-panel" class="module-panel glass" data-module="collection">
       <div class="panel-head">
         <div>
           <p class="eyebrow">第一人称采集流程</p>
@@ -181,7 +185,7 @@
       <div id="collection-attempt-list" class="data-table"></div>
     </section>
 
-    <section id="annotation-panel" class="module-panel" data-module="annotation">
+    <section id="annotation-panel" class="module-panel glass" data-module="annotation">
       <div class="panel-head">
         <div>
           <p class="eyebrow">智能标注平台</p>
@@ -209,7 +213,7 @@
       <div id="annotation-list" class="data-table"></div>
     </section>
 
-    <section id="training-panel" class="module-panel" data-module="training">
+    <section id="training-panel" class="module-panel glass" data-module="training">
       <div class="panel-head">
         <div>
           <p class="eyebrow">模型训练与优化</p>
@@ -226,7 +230,7 @@
       <div id="training-list" class="data-table"></div>
     </section>
 
-    <section id="models-panel" class="module-panel" data-module="models">
+    <section id="models-panel" class="module-panel glass" data-module="models">
       <div class="panel-head">
         <div>
           <p class="eyebrow">模型版本管理</p>
@@ -242,7 +246,7 @@
       <div id="models-list" class="data-table"></div>
     </section>
 
-    <section id="simulation-panel" class="module-panel" data-module="simulation">
+    <section id="simulation-panel" class="module-panel glass" data-module="simulation">
       <div class="panel-head">
         <div>
           <p class="eyebrow">仿真与虚实转换</p>
@@ -259,7 +263,7 @@
       <div id="simulation-list" class="data-table"></div>
     </section>
 
-    <section id="deployment-panel" class="module-panel" data-module="deployment">
+    <section id="deployment-panel" class="module-panel glass" data-module="deployment">
       <div class="panel-head">
         <div>
           <p class="eyebrow">边缘推理部署</p>
@@ -275,7 +279,7 @@
       <div id="deployment-list" class="data-table"></div>
     </section>
 
-    <section id="learning-panel" class="module-panel" data-module="learning">
+    <section id="learning-panel" class="module-panel glass" data-module="learning">
       <div class="panel-head">
         <div>
           <p class="eyebrow">在线微调与学习</p>
@@ -291,7 +295,7 @@
       <div id="learning-list" class="data-table"></div>
     </section>
 
-    <section id="monitoring-panel" class="module-panel" data-module="monitoring">
+    <section id="monitoring-panel" class="module-panel glass" data-module="monitoring">
       <div class="panel-head">
         <div>
           <p class="eyebrow">可视化监控看板</p>
@@ -303,7 +307,7 @@
       <div id="monitoring-list" class="data-table"></div>
     </section>
 
-    <section id="audit-panel" class="module-panel" data-module="audit">
+    <section id="audit-panel" class="module-panel glass" data-module="audit">
       <div class="panel-head">
         <div>
           <p class="eyebrow">日志与审计</p>
@@ -319,7 +323,7 @@
       <div id="audit-list" class="data-table"></div>
     </section>
 
-    <section id="system-panel" class="module-panel" data-module="system">
+    <section id="system-panel" class="module-panel glass" data-module="system">
       <div class="panel-head">
         <div>
           <p class="eyebrow">系统管理</p>
@@ -337,6 +341,7 @@
     </section>
   </main>
 
-  <script src="assets/embodied-platform.js?v=20"></script>
+  <script src="assets/embodied-platform.js?v=21"></script>
+  <script src="/vendor/glass/refract.js"></script>
 </body>
 </html>
