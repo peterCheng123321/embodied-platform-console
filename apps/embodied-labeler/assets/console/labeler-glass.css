@@ -9,42 +9,9 @@
    Load order: embodied.css → console.css → tokens.css → glass.css → THIS.
    ========================================================================== */
 
-/* ---- backdrop: calm graphite so the video stays the focus ---------------- */
-.glass-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  filter: brightness(var(--cc-bright, 1));
-  transition: filter 0.3s ease;
-  background:
-    radial-gradient(80% 80% at 30% 0%, rgba(70, 78, 96, 0.55), transparent 70%),
-    radial-gradient(70% 70% at 100% 100%, rgba(40, 46, 60, 0.70), transparent 70%),
-    linear-gradient(160deg, #16181f, #0c0d12);
-}
-/* backdrop moods (Control Center → 背景). Default above = 石墨 graphite. */
-.glass-backdrop[data-bg="midnight"] {
-  background:
-    radial-gradient(60% 60% at 78% 12%, rgba(94, 92, 230, 0.50), transparent 62%),
-    radial-gradient(55% 55% at 14% 28%, rgba(10, 132, 255, 0.42), transparent 60%),
-    radial-gradient(70% 70% at 50% 108%, rgba(48, 80, 200, 0.38), transparent 60%),
-    linear-gradient(160deg, #0c1230, #060814 58%, #0a0e22);
-}
-.glass-backdrop[data-bg="ember"] {
-  background:
-    radial-gradient(58% 58% at 16% 18%, rgba(255, 122, 70, 0.34), transparent 60%),
-    radial-gradient(60% 60% at 86% 20%, rgba(255, 159, 10, 0.30), transparent 60%),
-    radial-gradient(72% 70% at 70% 104%, rgba(214, 67, 31, 0.34), transparent 62%),
-    linear-gradient(160deg, #1c1310, #0c0807 60%, #160f0c);
-}
-.glass-backdrop::after { /* fine grain so the gradient doesn't band */
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.04;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
-}
+/* ---- backdrop: the calm graphite world (.glass-backdrop + 午夜/暖橙 moods +
+   grain) now lives in the shared /vendor/glass/glass.css — no per-app copy.
+   The labeler-specific 专注 focus dimming stays below. -------------------- */
 
 /* let the backdrop show: the chassis ground goes transparent -------------- */
 .embodied-page.console { background: transparent; }

@@ -17,31 +17,11 @@
    ============================================================================ */
 
 /* ---------------------------------------------------------------------------
-   1 — BACKDROP : calm graphite world the glass refracts.
-   MIRRORS the labeler's .glass-backdrop exactly (same gradient stack + grain).
-   The integrator adds <div class="glass-backdrop" aria-hidden="true"></div> as
-   the first child of <body> (see htmlWiring).
+   1 — BACKDROP : the calm graphite world (.glass-backdrop + moods + grain) now
+   lives in the shared /vendor/glass/glass.css — no per-app copy. The wiring
+   adds <div class="glass-backdrop" aria-hidden="true"></div> as <body>'s first
+   child; the body transparency below still lets it show through.
    --------------------------------------------------------------------------- */
-.glass-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  filter: brightness(var(--cc-bright, 1));
-  transition: filter 0.3s ease;
-  background:
-    radial-gradient(80% 80% at 30% 0%, rgba(70, 78, 96, 0.55), transparent 70%),
-    radial-gradient(70% 70% at 100% 100%, rgba(40, 46, 60, 0.70), transparent 70%),
-    linear-gradient(160deg, #16181f, #0c0d12);
-}
-.glass-backdrop::after { /* fine grain so the gradient doesn't band */
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.04;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
-}
 
 /* let the backdrop show through: the page ground + its scanline grid go
    transparent so the graphite world is what sits behind the floating slabs.

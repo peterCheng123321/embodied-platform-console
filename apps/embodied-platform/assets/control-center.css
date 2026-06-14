@@ -8,23 +8,8 @@
    does NOT re-declare the base .glass-backdrop (graphite + grain + --cc-bright)
    which platform-glass.css already owns — only the two extra backdrop moods. */
 
-/* ---- backdrop moods (Control Center → 背景). Default graphite lives in
-   platform-glass.css; these add 午夜 midnight + 暖橙 ember, mirroring the
-   labeler's moods so the shared setting reads the same in either app. -------- */
-.glass-backdrop[data-bg="midnight"] {
-  background:
-    radial-gradient(60% 60% at 78% 12%, rgba(94, 92, 230, 0.50), transparent 62%),
-    radial-gradient(55% 55% at 14% 28%, rgba(10, 132, 255, 0.42), transparent 60%),
-    radial-gradient(70% 70% at 50% 108%, rgba(48, 80, 200, 0.38), transparent 60%),
-    linear-gradient(160deg, #0c1230, #060814 58%, #0a0e22);
-}
-.glass-backdrop[data-bg="ember"] {
-  background:
-    radial-gradient(58% 58% at 16% 18%, rgba(255, 122, 70, 0.34), transparent 60%),
-    radial-gradient(60% 60% at 86% 20%, rgba(255, 159, 10, 0.30), transparent 60%),
-    radial-gradient(72% 70% at 70% 104%, rgba(214, 67, 31, 0.34), transparent 62%),
-    linear-gradient(160deg, #1c1310, #0c0807 60%, #160f0c);
-}
+/* backdrop moods (graphite default + 午夜 midnight + 暖橙 ember) now live in the
+   shared /vendor/glass/glass.css — no per-app copy. data-bg switching unchanged. */
 
 /* ============================================================================
    控制中心 · Control Center (glass overlay, opened from the header)
