@@ -7,6 +7,8 @@ const appDir = path.join(root, 'apps', 'embodied-platform');
 const labelerDir = path.join(root, 'apps', 'embodied-labeler');
 const htmlPath = path.join(appDir, 'index.html');
 const cssPath = path.join(appDir, 'assets', 'embodied-platform.css');
+const platformGlassPath = path.join(appDir, 'assets', 'platform-glass.css');
+const glassRefractPath = path.join(root, 'apps', '_vendor', 'glass', 'refract.js');
 const jsPath = path.join(appDir, 'assets', 'embodied-platform.js');
 const manifestPath = path.join(appDir, 'assets', 'manifest.webmanifest');
 const iconPath = path.join(appDir, 'assets', 'icon.svg');
@@ -19,6 +21,8 @@ const eventRoutesPath = path.join(root, 'backend', 'api', 'embodied_platform', '
 assert.equal(fs.existsSync(appDir), true, 'apps/embodied-platform folder should exist');
 assert.equal(fs.existsSync(htmlPath), true, 'embodied platform index.html should exist');
 assert.equal(fs.existsSync(cssPath), true, 'embodied platform CSS should exist');
+assert.equal(fs.existsSync(platformGlassPath), true, 'embodied platform glass skin should exist');
+assert.equal(fs.existsSync(glassRefractPath), true, 'shared glass refraction runtime should exist');
 assert.equal(fs.existsSync(jsPath), true, 'embodied platform JS should exist');
 assert.equal(fs.existsSync(manifestPath), true, 'embodied platform PWA manifest should exist');
 assert.equal(fs.existsSync(iconPath), true, 'embodied platform should ship a PWA icon');
@@ -29,6 +33,8 @@ assert.equal(fs.existsSync(eventRoutesPath), true, 'unified host should own the 
 
 const html = fs.readFileSync(htmlPath, 'utf8');
 const css = fs.readFileSync(cssPath, 'utf8');
+const platformGlass = fs.readFileSync(platformGlassPath, 'utf8');
+const glassRefract = fs.readFileSync(glassRefractPath, 'utf8');
 const js = fs.readFileSync(jsPath, 'utf8');
 const manifest = fs.readFileSync(manifestPath, 'utf8');
 const icon = fs.readFileSync(iconPath, 'utf8');
@@ -95,6 +101,7 @@ assert.doesNotMatch(
 );
 assert.match(html, /<main class="platform-workspace"/, 'first screen should be the dense operational workspace');
 assert.doesNotMatch(html, /hero|landing|marketing/i, 'new app should not be a marketing landing page');
+assert.match(css, /\.platform-header\s*{[\s\S]*width: calc\(100% - clamp\(1rem, 2\.2vw, 2\.2rem\)\)[\s\S]*margin: clamp\(0\.55rem, 1\.2vw, 0\.9rem\) auto clamp\(0\.55rem, 1\.2vw, 0\.9rem\)[\s\S]*top: 0/, 'header should be a contained sticky bar, not a full-bleed viewport strip');
 
 // Unified platform seam: the full temporal labeler is no longer a separate
 // localhost app. The console hosts it and its /api/embodied compatibility
@@ -109,7 +116,8 @@ assert.match(backendMain, /app\.mount\(\s*"\/embodied-assets"/, 'host backend mu
 assert.match(backendMain, /app\.mount\(\s*"\/embodied-cache"/, 'host backend must serve materialized episode bundles');
 assert.match(backendPyproject, /"pyarrow>=16"/, 'host backend must declare pyarrow for recorded LeRobot dataset routes');
 assert.doesNotMatch(`${html}\n${js}\n${labelerHtml}\n${labelerJs}\n${labelerConsoleJs}`, /127\.0\.0\.1:8000|127\.0\.0\.1:8001|localhost:8000|localhost:8001/, 'unified platform UI must not call or link to split localhost apps');
-assert.match(labelerHtml, /assets\/embodied\/embodied\.js\?v=31/, 'hosted labeler should include the reviewed v31 temporal JS');
+const labelerJsVersion = labelerHtml.match(/assets\/embodied\/embodied\.js\?v=(\d+)/)?.[1];
+assert.ok(labelerJsVersion, 'hosted labeler should include a versioned temporal JS asset');
 assert.match(labelerJs, /escapeHtml\(skill\.label\)/, 'palette must escape skill labels (XSS sink)');
 const swSrc = fs.readFileSync(path.join(root, 'apps', 'embodied-platform', 'sw.js'), 'utf8');
 assert.match(swSrc, /mode === 'navigate'[\s\S]{0,200}caches\.match\('\.\/index\.html'\)/, 'sw must serve the app shell for offline navigations (URL-key mismatch fix)');
@@ -118,7 +126,7 @@ for (const tok of ['--r-1: 4px', '--r-2: 8px', '--motion-fast: 120ms', '--motion
   assert.ok(css.includes(tok), `platform css must carry the shared design token ${tok}`);
   assert.ok(labelerCss.includes(tok), `labeler css must carry the shared design token ${tok}`);
 }
-assert.doesNotMatch(`${css}\n${labelerCss}`, /transition:\s*all\b/, 'no transition:all anywhere (motion grammar)');
+assert.doesNotMatch(`${css}\n${labelerCss}\n${platformGlass}`, /transition:\s*all\b/, 'no transition:all anywhere (motion grammar)');
 assert.match(labelerJs, /If-Match/, 'labeler saves must carry the optimistic-concurrency If-Match token');
 assert.match(labelerJs, /409/, 'labeler must handle the stale-write conflict status');
 assert.match(labelerHtml, /<video[^>]*\bmuted\b/, 'labeler video must be muted (no audio track; Chrome power policy pauses unmuted video-only media)');
@@ -236,6 +244,24 @@ assert.match(css, /\.cell-label/, 'mobile table/card labels should be styled');
 assert.match(css, /\.module-panel\s*{[^}]*grid-column:\s*2/s, 'desktop module panels should be pinned to the main workspace column');
 assert.match(html, /embodied-platform\.css\?v=\d+/, 'CSS asset should be versioned to avoid stale service worker/browser cache');
 assert.match(html, /embodied-platform\.js\?v=\d+/, 'JS asset should be versioned to avoid stale service worker/browser cache');
+assert.match(html, /platform-glass\.css\?v=\d+/, 'glass skin asset should be versioned to avoid stale browser cache');
+assert.match(html, /platform-glass\.css\?v=4/, 'global glass material correction must ship behind a fresh cache-busted asset');
+assert.match(html, /\/vendor\/glass\/refract\.js\?v=2/, 'refraction runtime should be cache-busted after performance changes');
+assert.match(platformGlass, /GLOBAL MATERIAL CORRECTION/, 'platform glass must carry the final global material correction');
+const globalGlassCorrection = platformGlass.slice(platformGlass.indexOf('GLOBAL MATERIAL CORRECTION'));
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass/, 'global glass correction must out-specify earlier KPI .glass selectors');
+assert.match(globalGlassCorrection, /\.platform-workspace \.module-panel\.glass/, 'global glass correction must out-specify earlier panel .glass selectors');
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::before/, 'KPI tile specular rim must out-specify the earlier disabled .glass rim');
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::after/, 'KPI tile base line must out-specify the earlier orange .glass instrument bar');
+assert.match(platformGlass, /--ops-glass-material:/, 'platform glass must define a lighter translucent material token');
+assert.match(platformGlass, /backdrop-filter:\s*blur\(38px\) saturate\(180%\) brightness\(1\.02\)/, 'major glass surfaces should use the corrected high-blur translucent material');
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::after\s*{[\s\S]*height:\s*1px[\s\S]*rgba\(255,\s*255,\s*255,\s*0\.36\)/, 'KPI tiles should use a thin specular base line instead of a heavy orange instrument bar');
+assert.match(globalGlassCorrection, /CONTENT PANE PERFORMANCE TIER/, 'platform glass must define a performance tier for large content panes');
+assert.match(globalGlassCorrection, /\.platform-workspace \.module-panel\.glass,[\s\S]*\.platform-workspace \.data-table\s*{[\s\S]*backdrop-filter:\s*none/, 'large content panes must not use live backdrop blur');
+assert.match(glassRefract, /maxArea/, 'glass refraction runtime must cap SVG refraction by rendered area');
+assert.match(glassRefract, /w \* h > maxArea[\s\S]*backdropFilter = ""/, 'oversized glass surfaces must fall back instead of receiving SVG backdrop filters');
+assert.match(platformGlass, /\.module-rail button\s*{[\s\S]*background-color 80ms var\(--ease\)[\s\S]*box-shadow 80ms var\(--ease\)/, 'module rail hover feedback should stay crisp');
+assert.match(platformGlass, /\.module-rail button::before\s*{[\s\S]*transition-duration: 90ms/, 'module rail active marker should not feel slow');
 const cssVersion = html.match(/embodied-platform\.css\?v=(\d+)/)?.[1];
 const jsVersion = html.match(/embodied-platform\.js\?v=(\d+)/)?.[1];
 

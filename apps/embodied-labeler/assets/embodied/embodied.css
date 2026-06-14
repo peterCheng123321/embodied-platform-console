@@ -10,7 +10,8 @@
     --motion-fast: 120ms;
     --motion-base: 180ms;
     --ease: cubic-bezier(0.2, 0, 0, 1);
-    /* Edges — hairline-first elevation (light-ground values; .console re-binds) */
+    /* Edges — hairline-first elevation (light-ground values; DEAD on .console:
+       rebound dark by console.css lines ~16-17, the only context that renders). */
     --edge: rgba(13, 79, 74, 0.14);
     --edge-strong: rgba(13, 79, 74, 0.26);
     /* The only shadow in the system — floating layers ONLY (palette, toasts,
@@ -23,6 +24,11 @@
     --st-info: #0d6e8a;
     --st-neutral: #64748b;
 
+    /* DEAD: rebound to dark by console.css `.console {…}` (lines ~11-37); kept
+       for reference. embodied.css renders ONLY inside <body class="…console…">
+       (the labeler index.html is its sole consumer), so every light-ground
+       --ds-* / --edge / --ds-shadow value below is always overridden at runtime.
+       Do NOT delete — documents the design-token contract console.css implements. */
     --ds-canvas: #fcfcfd;
     --ds-surface: #ffffff;
     --ds-surface-sunk: #f6f7f7;
@@ -385,6 +391,11 @@
 
 #video {
     width: 100% !important;
+    /* Base (chassis) height. OVERRIDDEN on the .console page: console.css
+       (.console #video, min(38vh,360px)) then labeler-glass.css
+       (.console #video, min(27vh,300px)) both raise specificity to 0,1,1 and
+       load after this file — labeler-glass.css wins (see note there). This
+       56vh value only applies if #video ever renders outside .console. */
     height: min(56vh, 32rem) !important;
     border-radius: 0.625rem;
     background: #0d1b1a;
@@ -977,6 +988,10 @@
 }
 
 @media (max-width: 640px) {
+    /* Narrow-viewport base override. Bare #video (0,1,0) like the rule above, so
+       on the .console page it is ALSO outranked by the .console #video rules
+       (0,1,1) in console.css / labeler-glass.css regardless of viewport — those
+       use vh units that already shrink on small screens. Applies only off .console. */
     #video {
         height: min(44vh, 20rem) !important;
     }

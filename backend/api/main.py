@@ -21,6 +21,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -62,6 +63,9 @@ app.add_middleware(
     # If-Match optimistic-concurrency handshake (same-origin reads it freely).
     expose_headers=["ETag"],
 )
+
+# Compress text assets (the labeler ships ~590 KB of uncompressed JS/CSS).
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(embodied_platform_router)
 app.include_router(embodied_router)

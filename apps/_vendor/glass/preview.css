@@ -1,0 +1,15 @@
+/* preview-only: the global reset + backdrop that the app-safe glass.css drops. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font); font-size: var(--fs); color: var(--t1);
+  -webkit-font-smoothing: antialiased; overflow: hidden; letter-spacing: -0.01em;
+  background: #0a0b12;
+}
+.gl-stage { position: relative; height: 100vh; width: 100vw; overflow: hidden; isolation: isolate; }
+.preview-grid {
+  position: relative; z-index: 1; height: 100vh; overflow-y: auto;
+  padding: var(--gap); display: flex; flex-direction: column; gap: var(--gap);
+}
+.preview-row { display: flex; gap: var(--gap); align-items: stretch; flex-wrap: wrap; }
+.preview-cap { color: var(--t3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin: 6px 2px; }

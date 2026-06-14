@@ -6,41 +6,32 @@
     <!-- Empty by default: hosted labeler API calls use the current origin. -->
     <meta name="api-base" content="">
     <title>嵌入式 AI 标注 · 星聚</title>
-    <script src="/vendor/tailwind/tailwind-play.js"></script>
+    <!-- Compiled, tree-shaken Tailwind (16KB) — replaces the 407KB Play CDN runtime
+         JIT. Theme + rebuild steps live in apps/embodied-labeler/tailwind.config.js. -->
+    <link rel="stylesheet" href="assets/console/tailwind.css?v=1">
     <link href="/vendor/font-awesome/css/font-awesome.min.css" rel="stylesheet">
     <link href="/vendor/fonts/plex.css" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#0d4f4a',
-                        secondary: '#1f7a6b',
-                        dark: '#16201f',
-                        light: '#fcfcfd',
-                        accent: '#ff5a36',
-                    },
-                    fontFamily: {
-                        sans: ['"IBM Plex Sans SC"', 'sans-serif'],
-                        mono: ['"IBM Plex Mono"', 'monospace'],
-                    },
-                },
-            },
-        };
-    </script>
     <link rel="stylesheet" href="assets/embodied/embodied.css?v=31">
     <link rel="stylesheet" href="assets/console/console.css?v=5">
+    <!-- 星聚 Liquid Glass skin (additive; preserves all chassis behaviour) -->
+    <link rel="stylesheet" href="/vendor/glass/tokens.css">
+    <link rel="stylesheet" href="/vendor/glass/glass.css">
+    <link rel="stylesheet" href="assets/console/labeler-glass.css?v=4">
 </head>
 <body class="embodied-page console font-sans antialiased">
+    <div class="glass-backdrop" aria-hidden="true"></div>
     <div class="console-chassis">
-        <header class="console-topbar">
+        <header class="console-topbar glass">
             <a class="topbar-brand" href="/app/">星聚 <span style="color:var(--ds-accent)">·</span> 具身平台</a>
             <nav class="app-switcher" aria-label="工作区">
                 <a href="/app/">运营台</a>
                 <span aria-current="page">标注台</span>
             </nav>
+            <button id="cc-toggle" class="cc-toggle" type="button" aria-label="打开控制中心">
+                <i class="fa fa-sliders" aria-hidden="true"></i> 控制中心
+            </button>
         </header>
-        <aside class="console-tree" aria-label="数据层级">
+        <aside class="console-tree glass" aria-label="数据层级">
             <div class="console-rail-section">
                 <div class="console-rail-title">XINGJU<span style="color:var(--ds-accent)">_</span>LABEL</div>
                 <input id="episode-tree-filter" class="console-tree-filter" type="text"
@@ -51,7 +42,7 @@
             </nav>
         </aside>
 
-        <section class="console-viewport">
+        <section class="console-viewport glass">
             <!-- task context bar — populated by loadEpisodeMeta() in embodied.js -->
             <div class="console-task-bar">
                 <span id="task-text"></span>
@@ -196,7 +187,7 @@
             </section>
         </section>
 
-        <aside class="console-inspector" aria-label="检查器">
+        <aside class="console-inspector glass" aria-label="检查器">
             <div class="console-rail-section">
                 <section id="palette-section" class="embodied-card embodied-palette-card">
                     <div class="embodied-panel-heading embodied-palette-heading">
@@ -288,7 +279,7 @@
             </div>
         </aside>
 
-        <div class="console-conductor">
+        <div class="console-conductor glass">
             <section id="timeline-section" class="embodied-card embodied-timeline-card">
                 <div class="embodied-panel-heading">
                     <span>时间轴校对</span>
@@ -352,7 +343,7 @@
             </section>
         </div>
 
-        <footer class="console-bottombar">
+        <footer class="console-bottombar glass">
             <nav class="console-modes" aria-label="模式">
                 <a class="console-mode" href="/app/#data-management"><i class="fa fa-th-large" aria-hidden="true"></i> 工作台</a>
                 <span class="console-mode" aria-current="page"><i class="fa fa-pencil" aria-hidden="true"></i> 标注</span>
@@ -386,7 +377,7 @@
                     <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">I O</kbd></td><td class="text-zinc-400 pl-3">Mark in / Mark out (additive to S)</td></tr>
                     <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">, .</kbd></td><td class="text-zinc-400 pl-3">±1 帧</td></tr>
                     <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">⇧, ⇧.</kbd></td><td class="text-zinc-400 pl-3">±10 帧</td></tr>
-                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">1–9</kbd></td><td class="text-zinc-400 pl-3">激活技能标签</td></tr>
+                    <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">1–9</kbd></td><td class="text-zinc-400 pl-3">选技能 + 在播放头标起点；播放中再按其它技能 = 接续下一段 (skill = mark start; tap another to chain)</td></tr>
                     <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">⇧ 1–9</kbd></td><td class="text-zinc-400 pl-3">更改选中片段的技能 (Change skill of selected segment)</td></tr>
                     <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">Q E</kbd></td><td class="text-zinc-400 pl-3">跳转到上 / 下一个片段</td></tr>
                     <tr><td class="py-1"><kbd class="font-mono bg-zinc-800 px-2 py-0.5 rounded">[ ]</kbd></td><td class="text-zinc-400 pl-3">微调选中片段的边界 ±1 帧</td></tr>
@@ -406,7 +397,61 @@
             </div>
         </div>
     </div>
-    <script src="assets/embodied/embodied.js?v=31" type="module"></script>
+    <!-- 控制中心 · Control Center (glass overlay; opened from the top bar) -->
+    <div id="cc-scrim" class="cc-scrim" hidden>
+      <div class="cc-panel" role="dialog" aria-label="控制中心">
+        <div class="cc-title">控制中心 · Control Center</div>
+        <div class="cc-grid">
+          <div class="cc-tile wide cc-media">
+            <div class="cc-media-art"><i class="fa fa-film" aria-hidden="true"></i></div>
+            <div class="cc-media-meta">
+              <div class="cc-media-title" id="cc-ep-title">演示回合 Demo episode</div>
+              <div class="cc-media-sub" id="cc-ep-sub">—</div>
+            </div>
+          </div>
+          <div class="cc-tile wide">
+            <div class="cc-tile-label"><i class="fa fa-tint"></i> 玻璃折射 Refraction</div>
+            <div class="cc-seg" data-cc="refract">
+              <button type="button" data-value="off">关</button>
+              <button type="button" data-value="light">轻</button>
+              <button type="button" data-value="standard">标准</button>
+              <button type="button" data-value="strong">强</button>
+            </div>
+          </div>
+          <div class="cc-tile">
+            <div class="cc-tile-label"><i class="fa fa-th"></i> 密度</div>
+            <div class="cc-seg" data-cc="density">
+              <button type="button" data-value="comfortable">舒适</button>
+              <button type="button" data-value="compact">紧凑</button>
+            </div>
+          </div>
+          <div class="cc-tile">
+            <div class="cc-tile-label"><i class="fa fa-eye"></i> 专注</div>
+            <div class="cc-toggle-tile">
+              <span style="font-size:12px;color:var(--t3)">暗化背景</span>
+              <button id="cc-focus" class="cc-switch" type="button" aria-pressed="false" aria-label="专注模式"></button>
+            </div>
+          </div>
+          <div class="cc-tile wide">
+            <div class="cc-tile-label"><i class="fa fa-picture-o"></i> 背景 Backdrop</div>
+            <div class="cc-seg" data-cc="backdrop">
+              <button type="button" data-value="graphite">石墨</button>
+              <button type="button" data-value="midnight">午夜</button>
+              <button type="button" data-value="ember">暖橙</button>
+            </div>
+          </div>
+          <div class="cc-tile wide">
+            <div class="cc-tile-label"><i class="fa fa-sun-o"></i> 亮度 Brightness</div>
+            <input id="cc-bright" class="cc-slider" type="range" min="50" max="130" value="100" aria-label="背景亮度">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="assets/embodied/embodied.js?v=33" type="module"></script>
     <script src="assets/console/embodied-console.js?v=2" type="module"></script>
+    <!-- 星聚 Liquid Glass: refraction engine + control-center glue (additive) -->
+    <script src="/vendor/glass/refract.js"></script>
+    <script src="assets/console/labeler-glass.js?v=2" type="module"></script>
 </body>
 </html>
