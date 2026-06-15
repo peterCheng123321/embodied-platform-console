@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#
+# pre-push — block direct pushes to main.
+#
+# Activated per-clone with:  git config core.hooksPath .githooks
+# (scripts/fix-push.sh and scripts/install-hooks.sh do this for you.)
+#
+# This is a convenience guardrail, not the enforcement boundary: it is local and
+# can be skipped with `git push --no-verify`. The authoritative lock is the
+# GitHub ruleset on main (.github/rulesets/main-protection.json), which the
+# server enforces for everyone outside the admin bypass list.
+#
+# git invokes us as:  pre-push <remote-name> <remote-url>
+# and feeds us, on stdin, one line per ref being pushed:
+#   <local ref> <local sha> <remote ref> <remote sha>
+#
+set -euo pipefail
+
+# Track the remote's default branch dynamically so this stays in step with the
+# ruleset's ~DEFAULT_BRANCH if the default is ever renamed; fall back to main.
+remote_name="${1:-origin}"
+default_ref="$(git symbolic-ref --quiet --short "refs/remotes/${remote_name}/HEAD" 2>/dev/null || true)"
+default_branch="${default_ref#"${remote_name}/"}"
+[ -n "$default_branch" ] || default_branch="main"
+protected="refs/heads/${default_branch}"
+blocked=0
+remote_ref=""
+
+# `|| [ -n "$remote_ref" ]` processes a final line with no trailing newline;
+# remote_ref is pre-initialised so the guard is safe under `set -u`.
+while read -r _local_ref _local_sha remote_ref _remote_sha || [ -n "$remote_ref" ]; do
+  if [ "$remote_ref" = "$protected" ]; then
+    blocked=1
+  fi
+  remote_ref=""
+done
+
+if [ "$blocked" -eq 1 ]; then
+  cat >&2 <<MSG
+
+  ✗ Direct pushes to ${default_branch} are blocked.
+
+    Ship fixes through a reviewed PR instead:
+        scripts/fix-push.sh <slug> "<title>"
+
+    --no-verify skips THIS local hook for everyone; it is not an authorization.
+    The GitHub ruleset still requires review + green CI server-side for
+    everyone outside the admin bypass list.
+
+MSG
+  exit 1
+fi
+
+exit 0
