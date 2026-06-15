@@ -952,6 +952,41 @@ def test_retry_failed_local_import_reruns_ingest_and_succeeds(tmp_path, monkeypa
     assert any(e["action"] == "import.succeeded" and e["resource"] == job["id"] for e in audit)
 
 
+def test_queue_retry_failed_local_import_reruns_ingest(tmp_path, monkeypatch):
+    """Regression guard: the unified PATCH /queue/import/{id}/status must
+    DELEGATE to the dedicated import retry — failed->queued on a LOCAL source
+    re-runs the synchronous ingest and lands on succeeded, instead of parking
+    the job in a dead-end queued that no worker picks up."""
+    import shutil
+
+    client = _client(tmp_path, monkeypatch)
+
+    late_root = tmp_path / "queue_late_lerobot"
+    job = client.post(
+        "/api/embodied-platform/imports",
+        headers=_admin_headers(),
+        json={"source_uri": late_root.as_uri(), "dataset_name": "queue-late-demo", "format": "lerobot"},
+    ).json()
+    assert job["status"] == "failed", job
+
+    shutil.copytree(LEROBOT_FIXTURE, late_root)
+    retry = client.patch(
+        f"/api/embodied-platform/queue/import/{job['id']}/status",
+        headers=_admin_headers(),
+        json={"status": "queued", "message": "retry via the unified queue"},
+    )
+    assert retry.status_code == 200, retry.text
+    retried = retry.json()
+    # QueueItem response, but the underlying import really re-ingested.
+    assert retried["kind"] == "import"
+    assert retried["status"] == "succeeded", retried
+    demo = next(
+        d for d in client.get("/api/embodied-platform/datasets").json()
+        if d["name"] == "queue-late-demo"
+    )
+    assert demo["episode_count"] == 3
+
+
 def test_retry_failed_local_import_with_still_bad_source_fails_again(tmp_path, monkeypatch):
     """A retried LOCAL import whose source is STILL broken must come back as a
     failed job carrying the parse error — never stuck queued."""

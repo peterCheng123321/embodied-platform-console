@@ -11,7 +11,18 @@ from pydantic import model_validator
 
 JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 AnnotationStatus = Literal["open", "review", "accepted", "rework"]
-DeploymentStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
+DeploymentStatus = JobStatus
+QueueKind = Literal[
+    "import",
+    "training",
+    "simulation",
+    "deployment",
+    "learning",
+    "annotation",
+    "collection_run",
+    "collection_attempt",
+]
+QueuePhase = Literal["waiting", "active", "review", "blocked", "done", "failed", "cancelled"]
 LearningPriority = Literal["low", "normal", "high", "urgent"]
 # 'collecting'/'ready_for_review'/'passed'/'blocked' are DERIVED from attempt
 # progress; 'completed'/'failed' are set only by the manual termination PATCH
@@ -123,6 +134,22 @@ class StatusUpdate(StrictModel):
     message: str | None = Field(default=None, max_length=500)
 
 
+class QueueItem(StrictModel):
+    kind: QueueKind
+    collection: str
+    id: str
+    status: str
+    phase: QueuePhase
+    title: str
+    subtitle: str | None = None
+    subject_id: str | None = None
+    source_uri: str | None = None
+    priority: str | None = None
+    message: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class AnnotationStatusUpdate(StrictModel):
     """PATCH /annotation-tasks/{task_id}/status body. An unknown status is a
     422 at the boundary; the route enforces the transition table (409)."""
@@ -135,6 +162,8 @@ class AnnotationLabel(StrictModel):
     end_frame: int = Field(ge=0)
     skill_id: str = Field(min_length=1, max_length=80)
     confidence: float | None = Field(default=None, ge=0, le=1)
+    instruction_text: str | None = Field(default=None, max_length=1000)
+    success: bool | None = None
 
     @model_validator(mode="after")
     def _check_frame_order(self) -> "AnnotationLabel":
@@ -367,6 +396,7 @@ class LearningQueueItemCreate(StrictModel):
 class LearningQueueItem(LearningQueueItemCreate):
     id: str
     status: JobStatus = "queued"
+    message: str | None = None
     created_at: str
     updated_at: str
 

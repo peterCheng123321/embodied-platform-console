@@ -182,6 +182,7 @@ for (const endpoint of [
   '/api/embodied-platform/simulation-jobs',
   '/api/embodied-platform/deployments',
   '/api/embodied-platform/learning-queue',
+  '/api/embodied-platform/queue',
   '/api/embodied-platform/monitoring/overview',
   '/api/embodied-platform/audit-events',
   '/api/embodied-platform/system/settings',
@@ -204,6 +205,22 @@ assert.match(js, /state\.ready/, 'actions should be gated until initial state is
 assert.match(js, /Promise\.allSettled/, 'live reads should not silently downgrade the whole app to demo mode on one endpoint failure');
 assert.match(js, /assertOfflineReference/, 'offline-only reference checks should not block fresh live backend writes');
 assert.match(js, /refreshState\(\)/, 'live writes should refresh canonical backend state after mutation');
+assert.match(js, /function compactQueueDetail/, 'queue renderer should shorten long source/detail text before rendering');
+assert.match(js, /queueRecords\s*=\s*Array\.isArray\(data\.queue\)/, 'frontend should render queues straight from the backend unified projection (data.queue), not re-derive them client-side');
+assert.match(js, /function renderQueueList/, 'frontend should render queues through one universal card renderer');
+assert.match(js, /renderQueueList\('imports-list'/, 'imports should route through the universal queue renderer');
+assert.match(js, /renderQueueList\('training-list'/, 'training jobs should route through the universal queue renderer');
+assert.match(js, /renderQueueList\('simulation-list'/, 'simulation jobs should route through the universal queue renderer');
+assert.match(js, /renderQueueList\('deployment-list'/, 'deployments should route through the universal queue renderer');
+assert.match(js, /renderQueueList\('learning-list'/, 'learning queue should route through the universal queue renderer');
+assert.doesNotMatch(js, /table\('imports-list'/, 'imports-list should not use the generic dense table renderer');
+assert.doesNotMatch(js, /table\('training-list'/, 'training-list should not use the generic dense table renderer');
+assert.doesNotMatch(js, /table\('simulation-list'/, 'simulation-list should not use the generic dense table renderer');
+assert.doesNotMatch(js, /table\('deployment-list'/, 'deployment-list should not use the generic dense table renderer');
+assert.doesNotMatch(js, /table\('learning-list'/, 'learning-list should not use the generic dense table renderer');
+assert.match(css, /\.queue-list/, 'queue lists should share a universal operational layout');
+assert.match(css, /\.queue-card__detail/, 'queue details should have dedicated truncation styling');
+assert.match(css, /\.queue-card__progress/, 'queue cards should show a stable status/progress track');
 assert.match(html, /试采任务进度与复核/, 'collection panel should expose first-person trial progress and review');
 assert.match(html, /id="collection-task-matrix"/, 'collection task progress matrix should exist');
 assert.match(html, /id="collection-attempt-list"/, 'collection attempt queue should exist');
@@ -245,17 +262,17 @@ assert.match(css, /\.module-panel\s*{[^}]*grid-column:\s*2/s, 'desktop module pa
 assert.match(html, /embodied-platform\.css\?v=\d+/, 'CSS asset should be versioned to avoid stale service worker/browser cache');
 assert.match(html, /embodied-platform\.js\?v=\d+/, 'JS asset should be versioned to avoid stale service worker/browser cache');
 assert.match(html, /platform-glass\.css\?v=\d+/, 'glass skin asset should be versioned to avoid stale browser cache');
-assert.match(html, /platform-glass\.css\?v=4/, 'global glass material correction must ship behind a fresh cache-busted asset');
+assert.match(html, /platform-glass\.css\?v=6/, 'global glass material correction must ship behind a fresh cache-busted asset');
 assert.match(html, /\/vendor\/glass\/refract\.js\?v=2/, 'refraction runtime should be cache-busted after performance changes');
 assert.match(platformGlass, /GLOBAL MATERIAL CORRECTION/, 'platform glass must carry the final global material correction');
 const globalGlassCorrection = platformGlass.slice(platformGlass.indexOf('GLOBAL MATERIAL CORRECTION'));
 assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass/, 'global glass correction must out-specify earlier KPI .glass selectors');
 assert.match(globalGlassCorrection, /\.platform-workspace \.module-panel\.glass/, 'global glass correction must out-specify earlier panel .glass selectors');
 assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::before/, 'KPI tile specular rim must out-specify the earlier disabled .glass rim');
-assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::after/, 'KPI tile base line must out-specify the earlier orange .glass instrument bar');
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::after/, 'KPI tile accent bar must have one winning global definition');
 assert.match(platformGlass, /--ops-glass-material:/, 'platform glass must define a lighter translucent material token');
 assert.match(platformGlass, /backdrop-filter:\s*blur\(38px\) saturate\(180%\) brightness\(1\.02\)/, 'major glass surfaces should use the corrected high-blur translucent material');
-assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::after\s*{[\s\S]*height:\s*1px[\s\S]*rgba\(255,\s*255,\s*255,\s*0\.36\)/, 'KPI tiles should use a thin specular base line instead of a heavy orange instrument bar');
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::after\s*{[\s\S]*height:\s*3px[\s\S]*linear-gradient\(90deg, var\(--accent\)/, 'KPI tiles should use a single radius-safe brand accent bar');
 assert.match(globalGlassCorrection, /CONTENT PANE PERFORMANCE TIER/, 'platform glass must define a performance tier for large content panes');
 assert.match(globalGlassCorrection, /\.platform-workspace \.module-panel\.glass,[\s\S]*\.platform-workspace \.data-table\s*{[\s\S]*backdrop-filter:\s*none/, 'large content panes must not use live backdrop blur');
 assert.match(glassRefract, /maxArea/, 'glass refraction runtime must cap SVG refraction by rendered area');
@@ -301,7 +318,8 @@ assert.doesNotMatch(css, /--bg:\s*#08110f/, 'old dark Ground Control background 
 // Fonts/scripts are vendored (deploy readiness A1): zero external CDN bytes.
 assert.match(html, /\/vendor\/fonts\/plex\.css/, 'platform must load the vendored Plex css (no external font CDN)');
 assert.doesNotMatch(`${html}\n${labelerHtml}`, /fonts\.googleapis|fonts\.gstatic|cdn\.tailwindcss|cdn\.jsdelivr/, 'no external CDN references — must be deployable behind the GFW');
-assert.match(labelerHtml, /\/vendor\/tailwind\/tailwind-play\.js/, 'labeler must load the vendored tailwind runtime');
+assert.match(labelerHtml, /assets\/console\/tailwind\.css\?v=\d+/, 'labeler must load compiled Tailwind CSS');
+assert.doesNotMatch(labelerHtml, /tailwind-play\.js/, 'labeler should not ship the Tailwind runtime on the hot path');
 assert.doesNotMatch(html, /Chakra\+Petch/, 'Chakra Petch should no longer be requested (Plex-only type system)');
 for (const stack of ['IBM Plex Sans SC', 'IBM Plex Mono']) {
   assert.match(css, new RegExp(stack), `CSS font stack should use ${stack}`);

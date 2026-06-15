@@ -1210,6 +1210,9 @@ body #login-form .login-field {
    the dense mono values. The light frost stays on the recessed tracks and the
    secondary button, whose resting look IS light translucent. */
 .platform-workspace .collection-summary > div,
+.platform-workspace .queue-list .queue-card,
+.platform-workspace .queue-list .queue-card__aside code,
+.platform-workspace .queue-list .queue-card__meta span,
 .platform-workspace .mon-tile__bar,
 .platform-workspace .mon-gauge__track,
 body .btn-secondary {
@@ -1217,4 +1220,12 @@ body .btn-secondary {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.platform-workspace .queue-list .queue-card {
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.platform-workspace .queue-list .queue-card:hover {
+  background-color: color-mix(in oklch, var(--accent) 7%, rgba(255, 255, 255, 0.055));
 }

@@ -20,6 +20,8 @@ def recorded_client(tmp_path, monkeypatch):
     monkeypatch.setenv("XINGJU_EMBODIED_DATASET_ROOT", str(ds_root))
     monkeypatch.setenv("XINGJU_EMBODIED_CACHE_ROOT", str(cache_root))
     monkeypatch.setenv("XINGJU_EMBODIED_DATA_ROOT", str(tmp_path / "ann"))
+    monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path / "platform"))
+    monkeypatch.delenv("XINGJU_EMBODIED_PLATFORM_DSN", raising=False)
 
     app = FastAPI()
     app.include_router(router)
@@ -261,6 +263,8 @@ def test_list_datasets_skips_recorded_when_root_missing(tmp_path, monkeypatch):
     the dev.sh env docs invite) must not 500 the registry and hide the
     always-available demo dataset; the recorded entry is skipped instead."""
     monkeypatch.setenv("XINGJU_EMBODIED_DATASET_ROOT", str(tmp_path / "missing"))
+    monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path / "platform"))
+    monkeypatch.delenv("XINGJU_EMBODIED_PLATFORM_DSN", raising=False)
     app = FastAPI()
     app.include_router(router)
     client = TestClient(app)
@@ -269,6 +273,52 @@ def test_list_datasets_skips_recorded_when_root_missing(tmp_path, monkeypatch):
     ids = [d["id"] for d in r.json()]
     assert "demo" in ids
     assert "recorded" not in ids
+
+
+def test_platform_imported_dataset_is_available_to_labeler(tmp_path, monkeypatch):
+    ds_root = build_synthetic_lerobot_dataset(tmp_path / "platform-ds", n_episodes=2, fps=10)
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    monkeypatch.delenv("XINGJU_EMBODIED_DATASET_ROOT", raising=False)
+    monkeypatch.setenv("XINGJU_EMBODIED_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("XINGJU_EMBODIED_DATA_ROOT", str(tmp_path / "ann"))
+    monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path / "platform"))
+    monkeypatch.delenv("XINGJU_EMBODIED_PLATFORM_DSN", raising=False)
+
+    from api.embodied_platform.repository import JsonRepository, empty_state
+
+    state = empty_state()
+    state["datasets"].append({
+        "id": "ds_platform",
+        "name": "warehouse-pick-v1",
+        "modality": "vision_language_action",
+        "robot_type": "mobile_manipulator",
+        "storage_uri": ds_root.as_uri(),
+        "description": None,
+        "episode_count": 2,
+        "created_at": "2026-06-14T00:00:00+00:00",
+        "trained_ready": False,
+    })
+    JsonRepository(tmp_path / "platform" / "state.json").write(state)
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    datasets = client.get("/api/embodied/datasets")
+    assert datasets.status_code == 200, datasets.text
+    platform = next(item for item in datasets.json() if item["id"] == "ds_platform")
+    assert platform["label"] == "warehouse-pick-v1"
+    assert platform["kind"] == "lerobot"
+    assert platform["episode_count"] == 2
+
+    episodes = client.get("/api/embodied/datasets/ds_platform/episodes")
+    assert episodes.status_code == 200, episodes.text
+    assert [item["episode_index"] for item in episodes.json()] == [0, 1]
+
+    bundle = client.get("/api/embodied/datasets/ds_platform/episodes/1")
+    assert bundle.status_code == 200, bundle.text
+    assert bundle.json()["meta"]["episode_index"] == 1
 
 
 def test_main_app_wiring_static_mounts_and_router():
@@ -293,6 +343,8 @@ def demo_client(tmp_path, monkeypatch):
     monkeypatch.delenv("XINGJU_EMBODIED_DATASET_ROOT", raising=False)
     monkeypatch.setenv("XINGJU_EMBODIED_CACHE_ROOT", str(tmp_path / "cache"))
     monkeypatch.setenv("XINGJU_EMBODIED_DATA_ROOT", str(tmp_path / "ann"))
+    monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path / "platform"))
+    monkeypatch.delenv("XINGJU_EMBODIED_PLATFORM_DSN", raising=False)
     # Hosted labeler assets resolve from this test file:
     # tests/embodied/ -> tests/ -> backend/ -> repo root.
     demo_dir = Path(__file__).resolve().parents[3] / "apps" / "embodied-labeler" / "assets" / "embodied"

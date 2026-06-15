@@ -11,6 +11,7 @@ const API = {
   simulation: '/api/embodied-platform/simulation-jobs',
   deployment: '/api/embodied-platform/deployments',
   learning: '/api/embodied-platform/learning-queue',
+  queue: '/api/embodied-platform/queue',
   monitoring: '/api/embodied-platform/monitoring/overview',
   audit: '/api/embodied-platform/audit-events',
   system: '/api/embodied-platform/system/settings',
@@ -76,6 +77,7 @@ const LIVE_ENDPOINTS = [
   { target: 'simulation_jobs', label: '仿真任务', url: API.simulation, fallback: [] },
   { target: 'deployments', label: '部署任务', url: API.deployment, fallback: [] },
   { target: 'learning_queue', label: '学习队列', url: API.learning, fallback: [] },
+  { target: 'queue', label: '统一队列', url: API.queue, fallback: [] },
   { target: 'monitoring', label: '监控', url: API.monitoring, fallback: {} },
   { target: 'audit_events', label: '审计', url: API.audit, fallback: [] },
   { target: 'system_settings', label: '系统设置', url: API.system, fallback: null },
@@ -614,6 +616,7 @@ function normaliseState(data) {
     approval_required_for_edge: true,
   };
   data.monitoring ||= {};
+  if (!Array.isArray(data.queue)) data.queue = [];
   return data;
 }
 
@@ -820,6 +823,7 @@ function setFieldError(fieldId, message) {
 
 function table(id, columns, rows) {
   const node = document.getElementById(id);
+  node.classList.remove('import-list', 'queue-list');
   node.setAttribute('role', 'table');
   node.setAttribute('aria-label', node.dataset.label || id);
   const columnTemplate = `grid-template-columns: repeat(${Math.max(columns.length, 1)}, minmax(0, 1fr));`;
@@ -837,6 +841,108 @@ function table(id, columns, rows) {
     return `<div class="row" role="row" style="${columnTemplate}">${cells}</div>`;
   }).join('');
   node.innerHTML = head + body;
+}
+
+function compactQueueDetail(value) {
+  const source = String(value || '');
+  if (!source) return '等待处理';
+  const normalized = source.replace(/^file:\/\//, '').replace(/\/+$/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  if (source.length <= 52 && parts.length <= 2) return source;
+  if (parts.length > 2) return `…/${parts.slice(-2).join('/')}`;
+  return `${source.slice(0, 24)}…${source.slice(-18)}`;
+}
+
+const QUEUE_META = {
+  import: { label: '导入', empty: '暂无导入任务' },
+  training: { label: '训练', empty: '暂无训练任务' },
+  simulation: { label: '仿真', empty: '暂无仿真任务' },
+  deployment: { label: '部署', empty: '暂无部署任务' },
+  learning: { label: '学习', empty: '暂无学习队列' },
+  annotation: { label: '标注', empty: '暂无标注任务' },
+  collection_run: { label: '采集批次', empty: '暂无采集批次' },
+  collection_attempt: { label: '采集视频', empty: '暂无采集视频' },
+};
+
+const QUEUE_PHASE_LABELS = {
+  waiting: '等待',
+  active: '执行中',
+  review: '待复核',
+  blocked: '阻塞',
+  done: '完成',
+  failed: '失败',
+  cancelled: '取消',
+};
+
+function queuePhase(status) {
+  if (['queued', 'open', 'draft'].includes(status)) return 'waiting';
+  if (['running', 'collecting', 'recorded'].includes(status)) return 'active';
+  if (['review', 'ready_for_review', 'uploaded', 'rework'].includes(status)) return 'review';
+  if (status === 'blocked') return 'blocked';
+  if (['succeeded', 'completed', 'accepted', 'passed'].includes(status)) return 'done';
+  if (['failed', 'rejected'].includes(status)) return 'failed';
+  if (status === 'cancelled') return 'cancelled';
+  return 'waiting';
+}
+
+function queueProgress(record) {
+  const phase = record.phase || queuePhase(record.status);
+  if (phase === 'waiting') return 18;
+  if (phase === 'active') return 56;
+  if (phase === 'review') return 74;
+  if (phase === 'blocked') return 42;
+  if (phase === 'done' || phase === 'failed' || phase === 'cancelled') return 100;
+  return 18;
+}
+
+function renderQueueList(id, records, options = {}) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  const firstKind = records[0]?.kind || options.kind || '';
+  const meta = QUEUE_META[firstKind] || { label: options.label || '队列', empty: '暂无记录' };
+  node.classList.add('queue-list');
+  node.setAttribute('role', 'list');
+  node.setAttribute('aria-label', options.label || meta.label);
+  if (!records.length) {
+    node.innerHTML = `<div class="queue-empty" role="listitem">${escapeHtml(options.empty || meta.empty)}</div>`;
+    return;
+  }
+  node.innerHTML = records.map((record) => {
+    const token = statusToken(record.status);
+    const phase = record.phase || queuePhase(record.status);
+    const progress = queueProgress(record);
+    const kindMeta = QUEUE_META[record.kind] || meta;
+    // Failure reason must win on failed/blocked cards: source_uri is always set
+    // on imports, so it would otherwise hide the only diagnostic for a failed
+    // ingest (e.g. "unsupported import format 'rosbag'").
+    const failed = record.status === 'failed' || record.status === 'rejected' || record.status === 'blocked';
+    const detail = (failed && record.message) || record.source_uri || record.message || record.subtitle || record.subject_id || record.id;
+    const detailLabel = compactQueueDetail(detail);
+    const subject = record.subject_id ? `<span>${escapeHtml(record.subject_id)}</span>` : '';
+    const priority = record.priority ? `<span>${escapeHtml(LABELS[record.priority] || record.priority)}</span>` : '';
+    const subtitle = record.subtitle ? `<span>${escapeHtml(record.subtitle)}</span>` : '';
+    const metaHtml = [subject, priority, subtitle].filter(Boolean).join('');
+    return `
+      <article class="queue-card queue-card--${token} queue-card--${phase}" role="listitem">
+        <div class="queue-card__main">
+          <div class="queue-card__topline">
+            <span class="queue-card__kind">${escapeHtml(kindMeta.label)}</span>
+            ${tag(record.status).value}
+          </div>
+          <h3 title="${escapeHtml(record.title)}">${escapeHtml(record.title)}</h3>
+          <p class="queue-card__detail" title="${escapeHtml(detail)}">${escapeHtml(detailLabel)}</p>
+          <div class="queue-card__meta">${metaHtml || '<span>暂无上下文</span>'}</div>
+        </div>
+        <div class="queue-card__aside">
+          <code title="${escapeHtml(record.id)}">${escapeHtml(record.id)}</code>
+          <div class="queue-card__progress" aria-label="${escapeHtml(QUEUE_PHASE_LABELS[phase] || phase)}">
+            <span style="width:${progress}%"></span>
+          </div>
+          <span class="queue-card__phase">${escapeHtml(QUEUE_PHASE_LABELS[phase] || phase)}</span>
+        </div>
+      </article>
+    `;
+  }).join('');
 }
 
 const STATUS_TOKENS = {
@@ -1222,6 +1328,13 @@ function renderAll() {
   const data = state.data;
   const episodes = data.episodes || [];
   const monitoring = data.monitoring || {};
+  // Render the queue straight from the backend's unified projection (data.queue,
+  // fetched by LIVE_ENDPOINTS) — the server's _project_queue is the single
+  // source of truth, shared by both platforms. Replaces a client-side
+  // re-projection that duplicated the logic AND could throw on a malformed
+  // collection_run, taking down every queue list.
+  const queueRecords = Array.isArray(data.queue) ? data.queue : [];
+  const recordsFor = (kind) => queueRecords.filter((record) => record.kind === kind);
   document.getElementById('metric-datasets').textContent = monitoring.dataset_count ?? data.datasets.length;
   document.getElementById('metric-queued').textContent = monitoring.queued_jobs ?? 0;
   document.getElementById('metric-running').textContent = monitoring.running_jobs ?? 0;
@@ -1233,28 +1346,25 @@ function renderAll() {
     item.storage_uri,
     String(item.episode_count ?? 0),
   ]));
-  table('episodes-list', ['片段', '数据集', '单元', '帧数'], episodes.map((item) => [
+  table('episodes-list', ['片段', '数据集', '单元', '帧数', '标注'], episodes.map((item) => [
     item.episode_id,
     item.dataset_id,
     item.robot_cell || '',
     String(item.frame_count ?? 0),
+    labelerLink(item.dataset_id, item.episode_id, '打开'),
   ]));
-  table('imports-list', ['任务 ID', '来源', '状态', '信息'], data.imports.map((item) => [
-    item.id,
-    item.source_uri,
-    tag(item.status),
-    item.message || '',
-  ]));
+  renderQueueList('imports-list', recordsFor('import'), { kind: 'import', label: '导入任务' });
   const latestImport = data.imports.at(-1);
   const importInput = document.getElementById('import-job-id');
   if (latestImport && importInput && !importInput.value.trim()) importInput.value = latestImport.id;
   renderCollection(data);
-  table('annotation-list', ['任务 ID', '片段', '任务', '负责人', '状态'], data.annotation_tasks.map((item) => [
+  table('annotation-list', ['任务 ID', '片段', '任务', '负责人', '状态', '标注台'], data.annotation_tasks.map((item) => [
     item.id,
     item.episode_id,
     LABELS[item.task_type] || item.task_type,
     item.assignee,
     tag(item.status),
+    labelerLink(item.dataset_id, item.episode_id, '继续'),
   ]));
   const latestAnnotationTask = data.annotation_tasks.at(-1);
   const annotationTaskInput = document.getElementById('annotation-task-id');
@@ -1262,36 +1372,17 @@ function renderAll() {
     annotationTaskInput.value = latestAnnotationTask.id;
   }
   renderAnnotationTaskStatus();
-  table('training-list', ['名称', '基础模型', '优化方式', '状态'], data.training_jobs.map((item) => [
-    item.name,
-    item.base_model,
-    LABELS[item.optimizer] || item.optimizer,
-    tag(item.status),
-  ]));
+  updateLabelerEntryLinks(data);
+  renderQueueList('training-list', recordsFor('training'), { kind: 'training', label: '训练任务' });
   table('models-list', ['名称', '版本', '产物', '启用'], data.models.map((item) => [
     item.name,
     item.version,
     item.artifact_uri,
     item.active ? tag('active') : '',
   ]));
-  table('simulation-list', ['场景', '仿真器', '指标', '状态'], data.simulation_jobs.map((item) => [
-    item.scenario,
-    item.simulator,
-    item.sim2real_metric || '迁移',
-    tag(item.status),
-  ]));
-  table('deployment-list', ['目标', '环境', '模型', '状态'], data.deployments.map((item) => [
-    item.target,
-    item.environment,
-    item.model_id,
-    tag(item.status),
-  ]));
-  table('learning-list', ['片段', '优先级', '原因', '状态'], data.learning_queue.map((item) => [
-    item.episode_id,
-    LABELS[item.priority] || item.priority,
-    item.reason,
-    tag(item.status),
-  ]));
+  renderQueueList('simulation-list', recordsFor('simulation'), { kind: 'simulation', label: '仿真任务' });
+  renderQueueList('deployment-list', recordsFor('deployment'), { kind: 'deployment', label: '部署任务' });
+  renderQueueList('learning-list', recordsFor('learning'), { kind: 'learning', label: '学习队列' });
   renderMonitoring(monitoring);
   table('audit-list', ['动作', '资源', '操作者', '详情'], data.audit_events.slice(-8).reverse().map((item) => [
     item.action,
@@ -1336,6 +1427,64 @@ function findDataset(identifier) {
 
 function findEpisode(identifier) {
   return (state.data.episodes || []).find((episode) => episode.id === identifier || episode.episode_id === identifier);
+}
+
+function episodeIndexFromIdentifier(episodeOrIdentifier) {
+  const identifier = typeof episodeOrIdentifier === 'object'
+    ? String(episodeOrIdentifier?.episode_id || episodeOrIdentifier?.id || '')
+    : String(episodeOrIdentifier || '');
+  const matches = [
+    identifier.match(/(?:episode|ep)[_-]?0*(\d+)$/i),
+    identifier.match(/[_-]ep0*(\d+)$/i),
+    identifier.match(/0*(\d+)$/),
+  ];
+  const hit = matches.find(Boolean);
+  return hit ? Number.parseInt(hit[1], 10) : 0;
+}
+
+function labelerHref(datasetIdentifier, episodeIdentifier, data = state.data) {
+  const datasets = data?.datasets || [];
+  const episodes = data?.episodes || [];
+  const dataset = datasets.find((item) => item.id === datasetIdentifier || item.name === datasetIdentifier);
+  const episode = episodes.find((item) => item.id === episodeIdentifier || item.episode_id === episodeIdentifier);
+  const datasetParam = dataset?.id || datasetIdentifier || 'demo';
+  const episodeIndex = episodeIndexFromIdentifier(episode || episodeIdentifier);
+  return `/labeler/?dataset=${encodeURIComponent(datasetParam)}&episode=${encodeURIComponent(String(episodeIndex))}`;
+}
+
+function labelerLink(datasetIdentifier, episodeIdentifier, label = '打开') {
+  return {
+    trustedHtml: true,
+    value: `<a class="table-action-link" href="${escapeHtml(labelerHref(datasetIdentifier, episodeIdentifier))}">${escapeHtml(label)}</a>`,
+  };
+}
+
+function hasLabelerTarget(data, datasetIdentifier, episodeIdentifier) {
+  const dataset = (data.datasets || []).find((item) => item.id === datasetIdentifier || item.name === datasetIdentifier);
+  if (!dataset) return false;
+  const datasetRefs = new Set([dataset.id, dataset.name, datasetIdentifier]);
+  return (data.episodes || []).some((item) => (
+    (item.id === episodeIdentifier || item.episode_id === episodeIdentifier)
+    && datasetRefs.has(item.dataset_id)
+  ));
+}
+
+function updateLabelerEntryLinks(data) {
+  const datasetInput = document.getElementById('annotation-dataset');
+  const episodeInput = document.getElementById('annotation-episode');
+  const fallbackDataset = data.datasets?.[0]?.id || 'demo';
+  const fallbackEpisode = data.episodes?.find((item) => item.dataset_id === fallbackDataset)?.episode_id || 'demo_episode';
+  let datasetId = datasetInput?.value?.trim() || fallbackDataset;
+  let episodeId = episodeInput?.value?.trim() || fallbackEpisode;
+  if (!hasLabelerTarget(data, datasetId, episodeId)) {
+    const latestTask = data.annotation_tasks?.at(-1);
+    datasetId = latestTask?.dataset_id || fallbackDataset;
+    episodeId = latestTask?.episode_id || fallbackEpisode;
+  }
+  const href = labelerHref(datasetId, episodeId, data);
+  document.querySelectorAll('[data-labeler-entry]').forEach((anchor) => {
+    anchor.setAttribute('href', href);
+  });
 }
 
 function findModel(identifier) {

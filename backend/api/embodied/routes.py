@@ -24,6 +24,8 @@ from fastapi import APIRouter, Header, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from api.embodied_platform.annotation_sync import AnnotationSyncResult, sync_labeler_segments_to_platform
+
 from .schema import SubtaskSegment
 from .datasets import DEMO_ROOT, DatasetInfo, list_datasets, dataset_root_for
 from .lerobot_reader import list_episodes
@@ -271,6 +273,9 @@ class SegmentsRequest(BaseModel):
     episode_id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
     annotator_id: UUID
     segments: list[SubtaskSegment]
+    dataset_id: str | None = Field(default=None, min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
+    episode_index: int | None = Field(default=None, ge=0)
+    sync_to_platform: bool = True
 
 
 class SegmentsResponse(BaseModel):
@@ -278,6 +283,9 @@ class SegmentsResponse(BaseModel):
     # served no client purpose and gave a free recon hint to anyone who
     # could reach the endpoint.
     written: int
+    platform_synced: bool = False
+    platform_task_id: str | None = None
+    platform_sync_reason: str | None = None
 
 
 @router.post("/segments", response_model=SegmentsResponse)
@@ -329,7 +337,25 @@ def post_segments(
             pass
         raise
     response.headers["ETag"] = _etag(out)
-    return SegmentsResponse(written=len(req.segments))
+    sync_result = None
+    if req.sync_to_platform:
+        try:
+            sync_result = sync_labeler_segments_to_platform(
+                dataset_id=req.dataset_id,
+                episode_id=req.episode_id,
+                episode_index=req.episode_index,
+                annotator_id=req.annotator_id,
+                segments=req.segments,
+            )
+        except Exception as exc:
+            logger.warning("platform annotation sync failed for %s: %s", req.episode_id, exc)
+            sync_result = AnnotationSyncResult(False, reason="platform sync failed")
+    return SegmentsResponse(
+        written=len(req.segments),
+        platform_synced=bool(sync_result and sync_result.synced),
+        platform_task_id=sync_result.task_id if sync_result else None,
+        platform_sync_reason=sync_result.reason if sync_result else None,
+    )
 
 
 @router.get("/segments", response_model=list[SubtaskSegment])

@@ -2263,7 +2263,13 @@ async function saveAll({ auto = false } = {}) {
         const r = await fetchWithTimeout(`${API_BASE}/api/embodied/segments`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ episode_id: EPISODE_ID, annotator_id, segments }),
+            body: JSON.stringify({
+                episode_id: EPISODE_ID,
+                dataset_id: DATASET_ID,
+                episode_index: EPISODE_INDEX,
+                annotator_id,
+                segments,
+            }),
         }, localReProbe ? 5000 : 15000);
         if (r.status === 409) {
             // Stale write: another session saved since we last read. Handled
@@ -2286,9 +2292,10 @@ async function saveAll({ auto = false } = {}) {
         const newEtag = r.headers.get('ETag');
         if (newEtag) segmentsEtag = newEtag;
         saveConflict = false;
-        setStorageMode('backend', '后端同步已连接');
+        setStorageMode('backend', data.platform_synced ? '后端同步已连接 · 运营台已同步' : '后端同步已连接');
         if (!auto) {
-            showToast(`已保存 ${data.written} 个片段`, 'success');
+            const syncNote = data.platform_synced ? '，已同步运营台' : '，运营台未匹配';
+            showToast(`已保存 ${data.written} 个片段${syncNote}`, 'success');
         }
         if (state.saveEpoch === epoch) {
             clearLocalPendingSync(annotator_id);
