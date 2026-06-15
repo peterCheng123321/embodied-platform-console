@@ -139,6 +139,11 @@ can run N replicas. Known follow-ups before truly large fleets: real SSO/OIDC
 identity (the shared-passcode login is single-team scope), event-ingest
 retention, and object storage for materialized media.
 
+## Contributing
+
+`main` is protected: ship changes through `scripts/fix-push.sh <slug> "<title>"`,
+which gates locally then opens a reviewed PR. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
