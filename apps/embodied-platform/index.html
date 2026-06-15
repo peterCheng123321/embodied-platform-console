@@ -7,10 +7,10 @@
   <title>星聚 · 具身平台运营台</title>
   <link rel="manifest" href="assets/manifest.webmanifest">
   <link rel="stylesheet" href="/vendor/fonts/plex.css">
-  <link rel="stylesheet" href="assets/embodied-platform.css?v=22">
+  <link rel="stylesheet" href="assets/embodied-platform.css?v=27">
   <link rel="stylesheet" href="/vendor/glass/tokens.css?v=1">
   <link rel="stylesheet" href="/vendor/glass/glass.css?v=1">
-  <link rel="stylesheet" href="assets/platform-glass.css?v=4">
+  <link rel="stylesheet" href="assets/platform-glass.css?v=6">
   <link rel="stylesheet" href="assets/control-center.css?v=1">
 </head>
 <body>
@@ -33,7 +33,7 @@
       </div>
       <nav class="app-switcher" aria-label="工作区">
         <span aria-current="page">运营台</span>
-        <a href="/labeler/?dataset=demo&amp;episode=0">标注台</a>
+        <a href="/labeler/?dataset=demo&amp;episode=0" data-labeler-entry>标注台</a>
       </nav>
     </div>
     <div class="header-actions">
@@ -194,7 +194,7 @@
           <h2>片段任务保存与复核队列</h2>
         </div>
         <div class="action-row">
-          <a id="open-temporal-labeler" href="/labeler/?dataset=demo&amp;episode=0" class="btn-secondary">打开完整时间段标注器</a>
+          <a id="open-temporal-labeler" href="/labeler/?dataset=demo&amp;episode=0" class="btn-secondary" data-labeler-entry>打开完整时间段标注器</a>
           <button type="button" data-action="save-annotation" class="btn-primary">保存标注</button>
         </div>
       </div>
@@ -380,7 +380,7 @@
     </div>
   </div>
 
-  <script src="assets/embodied-platform.js?v=21"></script>
+  <script src="assets/embodied-platform.js?v=27"></script>
   <script src="/vendor/glass/refract.js?v=2"></script>
   <!-- 控制中心 glue: dials shared glass refraction / density / backdrop / brightness (additive) -->
   <script src="assets/control-center.js?v=1" type="module"></script>

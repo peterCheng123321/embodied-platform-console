@@ -52,6 +52,8 @@ class TestSubtaskSegmentSchema:
 def embodied_app(tmp_path, monkeypatch):
     """Standalone FastAPI app with only the embodied router — no DB pool."""
     monkeypatch.setenv("XINGJU_EMBODIED_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path / "platform"))
+    monkeypatch.delenv("XINGJU_EMBODIED_PLATFORM_DSN", raising=False)
     from fastapi import FastAPI
     from api.embodied.routes import router
 
@@ -68,6 +70,38 @@ def client(embodied_app):
 def _auth(ann: str) -> dict[str, str]:
     """Helper: build the X-Annotator-Id header all real callers send."""
     return {"X-Annotator-Id": ann}
+
+
+def _platform_repo(tmp_path):
+    from api.embodied_platform.repository import JsonRepository
+
+    return JsonRepository(tmp_path / "platform" / "state.json")
+
+
+def _seed_platform_episode(tmp_path, *, dataset_id: str = "ds_platform") -> None:
+    from api.embodied_platform.repository import empty_state
+
+    state = empty_state()
+    state["datasets"].append({
+        "id": dataset_id,
+        "name": "warehouse-pick-v1",
+        "modality": "vision_language_action",
+        "robot_type": "mobile_manipulator",
+        "storage_uri": "file:///datasets/warehouse-pick-v1",
+        "description": None,
+        "episode_count": 2,
+        "created_at": "2026-06-14T00:00:00+00:00",
+        "trained_ready": False,
+    })
+    state["episodes"].append({
+        "id": "ep_platform_1",
+        "dataset_id": dataset_id,
+        "episode_id": "episode_000001",
+        "robot_cell": "warehouse-a",
+        "frame_count": 140,
+        "created_at": "2026-06-14T00:00:01+00:00",
+    })
+    _platform_repo(tmp_path).write(state)
 
 
 class TestPostSegments:
@@ -224,6 +258,161 @@ class TestPostSegments:
         }
         r = client.post("/api/embodied/segments", json=body, headers=_auth(ann))
         assert r.status_code == 422
+
+    def test_syncs_save_to_platform_annotation_task(self, client, tmp_path):
+        _seed_platform_episode(tmp_path)
+        ann = str(uuid4())
+
+        first = client.post(
+            "/api/embodied/segments",
+            json={
+                "episode_id": "ds_platform_ep1",
+                "dataset_id": "ds_platform",
+                "episode_index": 1,
+                "annotator_id": ann,
+                "segments": [{
+                    "annotator_id": ann,
+                    "episode_index": 1,
+                    "start_frame": 0,
+                    "end_frame": 12,
+                    "skill_id": "reach",
+                    "instruction_text": "approach the cube",
+                    "success": True,
+                }],
+            },
+            headers=_auth(ann),
+        )
+
+        assert first.status_code == 200, first.text
+        body = first.json()
+        assert body["written"] == 1
+        assert body["platform_synced"] is True
+        task_id = body["platform_task_id"]
+        state = _platform_repo(tmp_path).read()
+        assert len(state["annotation_tasks"]) == 1
+        task = state["annotation_tasks"][0]
+        assert task["id"] == task_id
+        assert task["dataset_id"] == "ds_platform"
+        assert task["episode_id"] == "episode_000001"
+        assert task["assignee"] == ann
+        assert task["label_count"] == 1
+        assert task["labels"][0]["instruction_text"] == "approach the cube"
+        assert task["labels"][0]["success"] is True
+        assert any(event["action"] == "annotation.sync.create" for event in state["audit_events"])
+
+        second = client.post(
+            "/api/embodied/segments",
+            json={
+                "episode_id": "ds_platform_ep1",
+                "dataset_id": "ds_platform",
+                "episode_index": 1,
+                "annotator_id": ann,
+                "segments": [{
+                    "annotator_id": ann,
+                    "episode_index": 1,
+                    "start_frame": 20,
+                    "end_frame": 40,
+                    "skill_id": "grasp",
+                }],
+            },
+            headers=_auth(ann),
+        )
+
+        assert second.status_code == 200, second.text
+        assert second.json()["platform_task_id"] == task_id
+        state = _platform_repo(tmp_path).read()
+        assert len(state["annotation_tasks"]) == 1
+        assert state["annotation_tasks"][0]["label_count"] == 1
+        assert state["annotation_tasks"][0]["labels"][0]["skill_id"] == "grasp"
+        assert any(event["action"] == "annotation.sync.update" for event in state["audit_events"])
+
+    def test_platform_sync_skip_does_not_block_jsonl_save(self, client, tmp_path):
+        ann = str(uuid4())
+        saved = client.post(
+            "/api/embodied/segments",
+            json={
+                "episode_id": "missing_dataset_ep0",
+                "dataset_id": "missing_dataset",
+                "episode_index": 0,
+                "annotator_id": ann,
+                "segments": [{
+                    "annotator_id": ann,
+                    "episode_index": 0,
+                    "start_frame": 0,
+                    "end_frame": 10,
+                    "skill_id": "reach",
+                }],
+            },
+            headers=_auth(ann),
+        )
+
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["platform_synced"] is False
+        assert saved.json()["platform_sync_reason"] == "platform dataset or episode not found"
+        out = tmp_path / "missing_dataset_ep0" / "meta" / "annotations" / ann / "subtask_segments.v1.jsonl"
+        assert out.exists()
+        assert _platform_repo(tmp_path).read()["annotation_tasks"] == []
+
+    def test_demo_save_creates_platform_demo_task(self, client, tmp_path):
+        ann = str(uuid4())
+        saved = client.post(
+            "/api/embodied/segments",
+            json={
+                "episode_id": "demo_episode",
+                "dataset_id": "demo",
+                "episode_index": 0,
+                "annotator_id": ann,
+                "segments": [{
+                    "annotator_id": ann,
+                    "episode_index": 0,
+                    "start_frame": 0,
+                    "end_frame": 10,
+                    "skill_id": "reach",
+                }],
+            },
+            headers=_auth(ann),
+        )
+
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["platform_synced"] is True
+        state = _platform_repo(tmp_path).read()
+        assert state["datasets"][0]["id"] == "demo"
+        assert state["episodes"][0]["episode_id"] == "demo_episode"
+        assert len(state["annotation_tasks"]) == 1
+        assert state["annotation_tasks"][0]["dataset_id"] == "demo"
+        assert state["annotation_tasks"][0]["episode_id"] == "demo_episode"
+
+    def test_platform_sync_exception_does_not_block_jsonl_save(self, client, tmp_path, monkeypatch):
+        from api.embodied import routes as routes_mod
+
+        def fail_sync(**_kwargs):
+            raise RuntimeError("control plane unavailable")
+
+        monkeypatch.setattr(routes_mod, "sync_labeler_segments_to_platform", fail_sync)
+        ann = str(uuid4())
+        saved = client.post(
+            "/api/embodied/segments",
+            json={
+                "episode_id": "ds_platform_ep0",
+                "dataset_id": "ds_platform",
+                "episode_index": 0,
+                "annotator_id": ann,
+                "segments": [{
+                    "annotator_id": ann,
+                    "episode_index": 0,
+                    "start_frame": 0,
+                    "end_frame": 10,
+                    "skill_id": "reach",
+                }],
+            },
+            headers=_auth(ann),
+        )
+
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["platform_synced"] is False
+        assert saved.json()["platform_sync_reason"] == "platform sync failed"
+        out = tmp_path / "ds_platform_ep0" / "meta" / "annotations" / ann / "subtask_segments.v1.jsonl"
+        assert out.exists()
 
 
 class TestGetSegments:

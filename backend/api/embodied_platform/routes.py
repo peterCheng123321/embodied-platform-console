@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import hmac
+import logging
 import math
 import os
 from typing import Any
@@ -47,6 +48,7 @@ from .schema import (
     MonitoringOverview,
     QCReport,
     QCThresholds,
+    QueueItem,
     SessionRequest,
     SessionResponse,
     SimulationJob,
@@ -73,6 +75,8 @@ WRITE_ROLES = {
     # Compatibility with the initial scaffold; production UI uses the specific roles above.
     "operator",
 }
+
+logger = logging.getLogger(__name__)
 
 JOB_TRANSITIONS = {
     "queued": {"running", "failed", "cancelled"},
@@ -458,6 +462,232 @@ def _transition_job(job: dict[str, Any], status: str, message: str | None) -> No
     if status not in JOB_TRANSITIONS.get(current, set()):
         raise HTTPException(status_code=409, detail=f"cannot transition job from {current} to {status}")
     job.update(status=status, message=message, updated_at=now_iso())
+
+
+JOB_QUEUE_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "import": {
+        "collection": "imports",
+        "model": ImportJob,
+        "audit": "import.status",
+        "roles": {"admin", "data_manager", "operator"},
+    },
+    "training": {
+        "collection": "training_jobs",
+        "model": TrainingJob,
+        "audit": "training.status",
+        "roles": {"admin", "ml_engineer", "operator"},
+    },
+    "simulation": {
+        "collection": "simulation_jobs",
+        "model": SimulationJob,
+        "audit": "simulation.status",
+        "roles": {"admin", "ml_engineer", "operator"},
+    },
+    "deployment": {
+        "collection": "deployments",
+        "model": Deployment,
+        "audit": "deployment.status",
+        "roles": {"admin", "deployment_operator", "operator"},
+    },
+    "learning": {
+        "collection": "learning_queue",
+        "model": LearningQueueItem,
+        "audit": "learning.status",
+        "roles": {"admin", "ml_engineer", "operator"},
+    },
+}
+
+
+def _queue_definition(kind: str) -> dict[str, Any]:
+    try:
+        return JOB_QUEUE_DEFINITIONS[kind]
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"queue kind not found: {kind}") from exc
+
+
+def _require_queue_actor(actor: dict[str, str], definition: dict[str, Any]) -> None:
+    allowed = definition["roles"]
+    if actor["role"] not in allowed:
+        raise HTTPException(status_code=403, detail=f"requires one of: {', '.join(sorted(allowed))}")
+
+
+def _phase_for_status(status: str) -> str:
+    if status in {"queued", "open", "draft"}:
+        return "waiting"
+    if status in {"running", "collecting", "recorded"}:
+        return "active"
+    if status in {"review", "ready_for_review", "uploaded", "rework"}:
+        return "review"
+    if status == "blocked":
+        return "blocked"
+    if status in {"succeeded", "completed", "accepted", "passed"}:
+        return "done"
+    if status in {"failed", "rejected"}:
+        return "failed"
+    if status == "cancelled":
+        return "cancelled"
+    return "waiting"
+
+
+def _queue_item(
+    *,
+    kind: str,
+    collection: str,
+    row: dict[str, Any],
+    title: str,
+    subtitle: str | None = None,
+    subject_id: str | None = None,
+    source_uri: str | None = None,
+    priority: str | None = None,
+    message: str | None = None,
+    status: str | None = None,
+) -> QueueItem | None:
+    item_id = row.get("id")
+    if not item_id:
+        return None
+    item_status = str(status or row.get("status", "queued"))
+    return QueueItem(
+        kind=kind,
+        collection=collection,
+        id=str(item_id),
+        status=item_status,
+        phase=_phase_for_status(item_status),
+        title=title or str(item_id),
+        subtitle=subtitle,
+        subject_id=subject_id,
+        source_uri=source_uri,
+        priority=priority,
+        message=message if message is not None else row.get("message"),
+        created_at=row.get("created_at") or row.get("recorded_at"),
+        updated_at=row.get("updated_at") or row.get("recorded_at") or row.get("created_at"),
+    )
+
+
+def _project_queue(state: dict[str, Any]) -> list[QueueItem]:
+    records: list[QueueItem] = []
+
+    def add(item: QueueItem | None) -> None:
+        if item is not None:
+            records.append(item)
+
+    for row in state.get("imports", []):
+        add(_queue_item(
+            kind="import",
+            collection="imports",
+            row=row,
+            title=str(row.get("dataset_name") or row.get("id") or "导入任务"),
+            subtitle=str(row.get("format") or "dataset ingest"),
+            subject_id=row.get("dataset_name"),
+            source_uri=row.get("source_uri"),
+        ))
+    for row in state.get("training_jobs", []):
+        add(_queue_item(
+            kind="training",
+            collection="training_jobs",
+            row=row,
+            title=str(row.get("name") or row.get("id") or "训练任务"),
+            subtitle=str(row.get("base_model") or row.get("optimizer") or "model training"),
+            subject_id=row.get("dataset_id"),
+        ))
+    for row in state.get("simulation_jobs", []):
+        add(_queue_item(
+            kind="simulation",
+            collection="simulation_jobs",
+            row=row,
+            title=str(row.get("scenario") or row.get("id") or "仿真任务"),
+            subtitle=str(row.get("simulator") or "simulation"),
+            subject_id=row.get("model_id"),
+            message=row.get("message") or row.get("sim2real_metric"),
+        ))
+    for row in state.get("deployments", []):
+        add(_queue_item(
+            kind="deployment",
+            collection="deployments",
+            row=row,
+            title=str(row.get("target") or row.get("id") or "部署任务"),
+            subtitle=str(row.get("environment") or "edge deployment"),
+            subject_id=row.get("model_id"),
+        ))
+    for row in state.get("learning_queue", []):
+        add(_queue_item(
+            kind="learning",
+            collection="learning_queue",
+            row=row,
+            title=str(row.get("reason") or row.get("id") or "学习队列"),
+            subtitle=str(row.get("episode_id") or "learning item"),
+            subject_id=row.get("episode_id"),
+            priority=row.get("priority"),
+        ))
+    for row in state.get("annotation_tasks", []):
+        add(_queue_item(
+            kind="annotation",
+            collection="annotation_tasks",
+            row=row,
+            title=str(row.get("task_type") or row.get("id") or "标注任务"),
+            subtitle=str(row.get("assignee") or "annotation"),
+            subject_id=row.get("episode_id"),
+            message=f"{row.get('label_count', 0)} labels",
+        ))
+    for row in state.get("collection_runs", []):
+        status = row.get("status", "collecting")
+        message = None
+        try:
+            progress = _progress_for_run(state, row)
+            if status not in COLLECTION_RUN_MANUAL_TERMINAL:
+                status = progress.status
+            message = (
+                f"{progress.completed_task_count} completed / "
+                f"{progress.ready_task_count} ready / {progress.blocked_task_count} blocked"
+            )
+        except (HTTPException, KeyError, ValidationError) as exc:
+            # Degrade gracefully but don't hide it: a run referencing a missing
+            # profile/attempt is a real data-integrity problem worth surfacing.
+            logger.warning(
+                "queue: collection_run %s progress unavailable (missing profile/attempt ref?): %s",
+                row.get("id"), exc,
+            )
+            message = "progress unavailable"
+        add(_queue_item(
+            kind="collection_run",
+            collection="collection_runs",
+            row=row,
+            title=str(row.get("subject_id") or row.get("id") or "采集批次"),
+            subtitle=str(row.get("profile_id") or "collection run"),
+            subject_id=row.get("subject_id"),
+            message=message,
+            status=str(status),
+        ))
+    for row in state.get("collection_attempts", []):
+        add(_queue_item(
+            kind="collection_attempt",
+            collection="collection_attempts",
+            row=row,
+            title=str(row.get("task_id") or row.get("id") or "采集视频"),
+            subtitle=f"attempt {row.get('attempt_index', '')}".strip(),
+            subject_id=row.get("run_id"),
+            source_uri=row.get("video_uri"),
+            message=row.get("transcript"),
+        ))
+
+    return sorted(records, key=lambda item: item.updated_at or item.created_at or "", reverse=True)
+
+
+def _queue_item_for_job(kind: str, row: dict[str, Any]) -> QueueItem:
+    state = {
+        "imports": [row] if kind == "import" else [],
+        "training_jobs": [row] if kind == "training" else [],
+        "simulation_jobs": [row] if kind == "simulation" else [],
+        "deployments": [row] if kind == "deployment" else [],
+        "learning_queue": [row] if kind == "learning" else [],
+        "annotation_tasks": [],
+        "collection_runs": [],
+        "collection_attempts": [],
+        "collection_profiles": [],
+    }
+    projected = [item for item in _project_queue(state) if item.kind == kind and item.id == row.get("id")]
+    if not projected:
+        raise HTTPException(status_code=500, detail=f"failed to project queue item: {kind}/{row.get('id')}")
+    return projected[0]
 
 
 @router.get("/datasets", response_model=list[Dataset])
@@ -1255,6 +1485,41 @@ def update_learning_item_status(
         _transition_job(item, req.status, req.message)
         _append_audit(state, action="learning.status", resource=item_id, detail=req.status, actor=actor)
         return LearningQueueItem.model_validate(item)
+
+    return repo.mutate(_mutate)
+
+
+@router.get("/queue", response_model=list[QueueItem])
+def list_queue(repo: JsonRepository = Depends(_repo)) -> list[QueueItem]:
+    return _project_queue(repo.read())
+
+
+@router.patch("/queue/{kind}/{item_id}/status", response_model=QueueItem)
+def update_queue_item_status(
+    kind: str,
+    item_id: str,
+    req: StatusUpdate,
+    actor: dict[str, str] = Depends(require_write_actor),
+    repo: JsonRepository = Depends(_repo),
+) -> QueueItem:
+    definition = _queue_definition(kind)
+    _require_queue_actor(actor, definition)
+
+    # Import retries must go through the dedicated handler so failed->queued on a
+    # LOCAL source actually RE-RUNS ingest (parse + materialize) instead of
+    # parking the job in a dead-end "queued" no external worker will pick up. The
+    # write + role gate is already enforced above; update_import_status performs
+    # its own audit, so we don't double-audit here.
+    if kind == "import":
+        job = update_import_status(item_id, req, actor=actor, repo=repo)
+        return _queue_item_for_job("import", job.model_dump(mode="json"))
+
+    def _mutate(state: dict[str, Any]) -> QueueItem:
+        item = _find(state, definition["collection"], item_id)
+        _transition_job(item, req.status, req.message)
+        _append_audit(state, action=definition["audit"], resource=item_id, detail=req.status, actor=actor)
+        definition["model"].model_validate(item)
+        return _queue_item_for_job(kind, item)
 
     return repo.mutate(_mutate)
 
