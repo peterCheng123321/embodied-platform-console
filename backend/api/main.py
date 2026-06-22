@@ -19,10 +19,10 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .embodied.routes import router as embodied_router
@@ -66,6 +66,27 @@ app.add_middleware(
 
 # Compress text assets (the labeler ships ~590 KB of uncompressed JS/CSS).
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# Cap declared request-body size as a coarse anti-disk-exhaustion guard (issue
+# #2). This is defense-in-depth ONLY: a client can omit/forge Content-Length
+# (e.g. chunked), so the load-bearing control is the per-field/per-list
+# max_length on the parsed Pydantic models — this just rejects an obviously
+# oversized write at the edge before it is parsed.
+MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024  # 4 MiB
+
+
+@app.middleware("http")
+async def _limit_request_body(request: Request, call_next):
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            too_large = int(declared) > MAX_REQUEST_BODY_BYTES
+        except ValueError:
+            return JSONResponse(status_code=400, content={"detail": "invalid Content-Length"})
+        if too_large:
+            return JSONResponse(status_code=413, content={"detail": "request body too large"})
+    return await call_next(request)
 
 app.include_router(embodied_platform_router)
 app.include_router(embodied_router)

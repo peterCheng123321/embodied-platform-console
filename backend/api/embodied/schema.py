@@ -20,8 +20,8 @@ class SubtaskSegment(BaseModel):
     episode_index: int = Field(ge=0)
     start_frame: int = Field(ge=0)
     end_frame: int = Field(ge=0)
-    skill_id: str = Field(min_length=1)
-    instruction_text: str | None = None
+    skill_id: str = Field(min_length=1, max_length=200)
+    instruction_text: str | None = Field(default=None, max_length=2000)
     ts_client: datetime | None = None
     schema_version: int = 1
     success: bool | None = None

@@ -19,3 +19,15 @@ import pytest
 def reset_schema():
     """No-op override: embodied tests don't need a Postgres schema reset."""
     yield
+
+
+@pytest.fixture(autouse=True)
+def _embodied_auth_secret(monkeypatch):
+    """Configure the principal-signing secret for every embodied test.
+
+    Segment routes now require a valid platform principal signature (issue #2),
+    which `sign_principal`/`_verify_principal_signature` derive from this env
+    var. Setting it here (autouse) lets test helpers mint signatures the routes
+    accept; route-free tests (reader/materializer/fixtures) are unaffected.
+    """
+    monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_AUTH_SECRET", "test-embodied-principal-secret")
