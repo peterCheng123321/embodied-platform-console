@@ -29,6 +29,7 @@ def build_synthetic_lerobot_dataset(
     fps: int = 10,
     start_index: int = 0,
     with_video: bool = True,
+    data_files: int = 1,
 ) -> Path:
     """Write a minimal valid LeRobotDataset v3.0 to tmp_path/dataset and return it.
 
@@ -47,6 +48,12 @@ def build_synthetic_lerobot_dataset(
       positional indexing.
     with_video: when False, skip ffmpeg mp4 generation. Set False for pure
       reader tests that never touch mp4 files.
+    data_files: number of data parquet files to split the frame rows across
+      (data/chunk-000/file-{i:03d}.parquet). Defaults to 1 (single file). Use >1
+      to build a dataset whose episodes parquet is single-chunk (reader passes)
+      but whose data parquet spans multiple files, so a global
+      dataset_from/to_index can fall outside file-000 — the case the
+      materializer's multi-chunk guard must catch (issue #3).
     """
     root = tmp_path / "dataset"
 
@@ -113,15 +120,24 @@ def build_synthetic_lerobot_dataset(
     eps_path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(eps_table, eps_path)
 
-    # --- data parquet (observation.state, one list[float] per frame) ---
+    # --- data parquet(s) (observation.state, one list[float] per frame) ---
     n_frames = _EP_LEN * n_episodes
     state_rows = [[float(i + j * 0.1) for j in range(STATE_DIM)] for i in range(n_frames)]
-    data_table = pa.table(
-        {"observation.state": pa.array(state_rows, type=pa.list_(pa.float32()))}
-    )
-    data_path = root / "data" / "chunk-000" / "file-000.parquet"
-    data_path.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(data_table, data_path)
+    # Split the frame rows across `data_files` parquet files. Episodes parquet
+    # stays single-chunk, so the reader still passes while data spans >1 file —
+    # the exact split that lets a global dataset_from/to_index overrun file-000
+    # (exercises the materializer's multi-chunk fail-loud guard, issue #3).
+    per_file = -(-n_frames // data_files)  # ceil division, no import
+    for fi in range(data_files):
+        chunk_rows = state_rows[fi * per_file:(fi + 1) * per_file]
+        if not chunk_rows:
+            continue
+        data_table = pa.table(
+            {"observation.state": pa.array(chunk_rows, type=pa.list_(pa.float32()))}
+        )
+        data_path = root / "data" / "chunk-000" / f"file-{fi:03d}.parquet"
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(data_table, data_path)
 
     # --- one tiny real mp4 (ffmpeg testsrc) for the Phase 2 materializer ---
     if with_video:
