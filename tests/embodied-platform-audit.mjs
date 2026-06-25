@@ -107,6 +107,11 @@ assert.match(css, /\.platform-header\s*{[\s\S]*width: calc\(100% - clamp\(1rem, 
 // localhost app. The console hosts it and its /api/embodied compatibility
 // surface on the same origin.
 assert.match(html, /href="\/labeler\/\?dataset=demo&amp;episode=0"/, 'annotation module should open the hosted temporal labeler');
+// Because the labeler is the source-of-truth for segments, the platform must NOT
+// fabricate label boundaries when creating an annotation task: a new task starts
+// unlabeled and real frame ranges arrive via the labeler -> platform sync.
+assert.doesNotMatch(js, /skill_id:\s*'(approach|grasp)'/, 'platform must not fabricate annotation label segments; real segments come from the temporal labeler sync');
+assert.match(js, /task_type: 'trajectory_segment'[\s\S]*?labels: \[\]/, 'save-annotation should create an unlabeled task (labels: []), not invented skill boundaries');
 assert.match(backendMain, /from \.embodied\.routes import router as embodied_router/, 'host backend must include the temporal labeler API router');
 assert.match(backendMain, /from \.embodied_platform\.event_routes import router as event_ingest_router/, 'host backend must include the retired event ingest router');
 assert.match(backendMain, /app\.include_router\(embodied_router\)/, 'host backend must mount /api/embodied routes');
