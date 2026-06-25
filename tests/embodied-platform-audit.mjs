@@ -359,6 +359,12 @@ assert.match(js, /mon-gauge__fill/, 'sim success rate should render as a gauge')
 assert.match(js, /sim_success_rate/, 'monitoring gauge should read sim_success_rate');
 assert.match(js, /MONITORING_TILE_KEYS[\s\S]*unknownEntries/, 'unknown monitoring metrics should fall back to the table');
 
+// Learning queue ordering: the operator-chosen priority must actually rank the
+// queue, not just paint a badge. The queue is rendered in priority order so the
+// most urgent work surfaces first instead of inheriting raw backend order.
+assert.match(js, /const PRIORITY_RANK\s*=\s*\{[^}]*urgent[^}]*high[^}]*normal[^}]*low[^}]*\}/, 'learning queue should define a PRIORITY_RANK map ordering urgent before low');
+assert.match(js, /recordsFor\('learning'\)\][\s\S]{0,40}\.sort\(/, 'learning queue should sort a copy of its records by priority before rendering');
+
 // Login control (spec §5) — ids present + wired to /session with sessionStorage principal.
 for (const id of ['login-toggle', 'login-form', 'login-actor', 'login-role', 'login-passcode', 'login-submit', 'principal-label', 'logout-btn']) {
   assert.match(html, new RegExp(`id="${id}"`), `login control #${id} should exist`);

@@ -133,6 +133,10 @@ const ANNOTATION_ACTION_GATES = {
   'resubmit-annotation': { from: ['rework'], to: 'review' },
 };
 
+// Learning-queue priority order (highest first). Keys match the enqueue-learning
+// select values; unknown priorities sort last so the queue still renders.
+const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+
 const LABELS = {
   queued: '排队中',
   running: '运行中',
@@ -1382,7 +1386,10 @@ function renderAll() {
   ]));
   renderQueueList('simulation-list', recordsFor('simulation'), { kind: 'simulation', label: '仿真任务' });
   renderQueueList('deployment-list', recordsFor('deployment'), { kind: 'deployment', label: '部署任务' });
-  renderQueueList('learning-list', recordsFor('learning'), { kind: 'learning', label: '学习队列' });
+  // Order the learning queue by priority (urgent first). Sort a copy: recordsFor
+  // returns a fresh array today, but the spread keeps this in-place sort safe
+  // regardless of that. Stable sort preserves backend order within a priority.
+  renderQueueList('learning-list', [...recordsFor('learning')].sort((a, b) => (PRIORITY_RANK[a.priority] ?? 99) - (PRIORITY_RANK[b.priority] ?? 99)), { kind: 'learning', label: '学习队列' });
   renderMonitoring(monitoring);
   table('audit-list', ['动作', '资源', '操作者', '详情'], data.audit_events.slice(-8).reverse().map((item) => [
     item.action,
