@@ -518,6 +518,9 @@ class PolygonGeometry(EventModel):
     def _no_explicit_close(cls, value: list[tuple[float, float]]) -> list[tuple[float, float]]:
         if len(value) >= 4 and value[0] == value[-1]:
             raise ValueError("polygon vertices must not repeat the first point at the end")
+        for x, y in value:
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError("polygon vertex coordinates must be finite (Infinity and NaN are not allowed)")
         return value
 
 
