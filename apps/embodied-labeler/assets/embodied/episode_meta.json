@@ -1,0 +1,11 @@
+{
+  "task": "Put the marker in the pot",
+  "task_zh": "把笔放进锅里",
+  "dataset": "lerobot/droid_100",
+  "episode_index": 0,
+  "camera": "exterior_image_1_left",
+  "robot": "Franka Emika Panda",
+  "fps": 15,
+  "label_schema_id": "tabletop_manipulation",
+  "total_frames": 167
+}

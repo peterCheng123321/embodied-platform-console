@@ -1,0 +1,60 @@
+{
+  "default_schema_id": "tabletop_manipulation",
+  "schemas": [
+    {
+      "id": "tabletop_manipulation",
+      "name": "桌面操作",
+      "description": "适合抓取、放置、移动物体的机器人桌面任务。",
+      "labels": [
+        { "id": "reach", "label": "接近 reach", "color": "#7c3aed" },
+        { "id": "grasp", "label": "抓取 grasp", "color": "#10b981" },
+        { "id": "lift", "label": "抬起 lift", "color": "#0ea5e9" },
+        { "id": "transport", "label": "移动 transport", "color": "#2563eb" },
+        { "id": "place", "label": "放置 place", "color": "#f59e0b" },
+        { "id": "adjust", "label": "微调 adjust", "color": "#ec4899" },
+        { "id": "release", "label": "松开 release", "color": "#14b8a6" },
+        { "id": "idle", "label": "空闲 idle", "color": "#71717a" }
+      ]
+    },
+    {
+      "id": "tool_use",
+      "name": "工具使用",
+      "description": "适合拿取工具、对准、执行操作和收尾的任务。",
+      "labels": [
+        { "id": "approach_tool", "label": "接近工具", "color": "#7c3aed" },
+        { "id": "pick_tool", "label": "拿取工具", "color": "#10b981" },
+        { "id": "align_tool", "label": "对准目标", "color": "#0ea5e9" },
+        { "id": "apply_tool", "label": "执行操作", "color": "#f59e0b" },
+        { "id": "inspect", "label": "检查结果", "color": "#2563eb" },
+        { "id": "put_away", "label": "归位工具", "color": "#14b8a6" },
+        { "id": "idle", "label": "空闲 idle", "color": "#71717a" }
+      ]
+    },
+    {
+      "id": "navigation_interaction",
+      "name": "移动交互",
+      "description": "适合移动机器人、避障、对齐和等待指令的片段。",
+      "labels": [
+        { "id": "move_to_target", "label": "移动到目标", "color": "#2563eb" },
+        { "id": "avoid_obstacle", "label": "避障", "color": "#f97316" },
+        { "id": "align_pose", "label": "姿态对齐", "color": "#0ea5e9" },
+        { "id": "scan_scene", "label": "观察环境", "color": "#7c3aed" },
+        { "id": "wait_signal", "label": "等待信号", "color": "#71717a" },
+        { "id": "recover", "label": "恢复动作", "color": "#dc2626" }
+      ]
+    },
+    {
+      "id": "handover",
+      "name": "人机交接",
+      "description": "适合递交、接收、确认和失败恢复的人机协作任务。",
+      "labels": [
+        { "id": "offer", "label": "递出 offer", "color": "#7c3aed" },
+        { "id": "wait_human", "label": "等待接收", "color": "#71717a" },
+        { "id": "handover", "label": "交接 handover", "color": "#10b981" },
+        { "id": "confirm", "label": "确认完成", "color": "#2563eb" },
+        { "id": "retry", "label": "重试 retry", "color": "#f59e0b" },
+        { "id": "abort", "label": "中止 abort", "color": "#dc2626" }
+      ]
+    }
+  ]
+}

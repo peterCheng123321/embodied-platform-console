@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-density="comfortable">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>星聚 · Liquid Glass 参考</title>
+  <link rel="stylesheet" href="/vendor/fonts/plex.css" />
+  <link rel="stylesheet" href="/vendor/font-awesome/css/font-awesome.min.css" />
+  <link rel="stylesheet" href="/vendor/glass/tokens.css" />
+  <link rel="stylesheet" href="/vendor/glass/glass.css" />
+  <link rel="stylesheet" href="/vendor/glass/glass-kit.css" />
+  <link rel="stylesheet" href="/vendor/glass/preview.css" />
+</head>
+<body>
+  <div class="gl-stage">
+    <div class="gl-bg" data-bg="graphite"></div>
+    <div class="preview-grid">
+
+      <div class="preview-cap">顶栏 Top bar</div>
+      <header class="glass gl-top">
+        <div class="gl-traffic"><i class="tl-r"></i><i class="tl-y"></i><i class="tl-g"></i></div>
+        <div class="gl-brand">
+          <div class="gl-logo"><i class="fa fa-cube"></i></div>
+          <div class="gl-brand-txt"><b>星聚标注</b><span>Liquid Glass</span></div>
+        </div>
+        <div class="gl-spacer"></div>
+        <div class="gl-progress">
+          <div class="gl-prog-track"><div class="gl-prog-fill" style="width:62%"></div></div>
+          <span class="gl-prog-txt">62%</span>
+        </div>
+        <div class="gl-avatar">PC</div>
+      </header>
+
+      <div class="preview-row" style="flex:1; min-height:340px;">
+        <nav class="glass gl-rail" style="flex:0 0 76px;">
+          <div class="gl-rail-tools">
+            <button class="gl-tool on"><i class="fa fa-mouse-pointer"></i></button>
+            <button class="gl-tool"><i class="fa fa-square-o"></i></button>
+            <button class="gl-tool"><i class="fa fa-pencil"></i></button>
+          </div>
+        </nav>
+
+        <section class="glass" style="flex:1; border-radius:var(--r-lg); padding:var(--pad);">
+          <div class="preview-cap">按钮 Buttons</div>
+          <div class="preview-row" style="margin-bottom:14px;">
+            <button class="gl-save"><i class="fa fa-check"></i> 保存全部</button>
+            <button class="gl-navbtn">次要 Secondary</button>
+            <button class="gl-qbtn"><i class="fa fa-magic"></i> Quick</button>
+          </div>
+          <div class="preview-cap">分段控件 Segmented</div>
+          <div class="gl-seg" style="width:fit-content;">
+            <button class="on">图像</button><button>文本</button>
+          </div>
+        </section>
+
+        <aside class="glass gl-panel" style="flex:0 0 340px;">
+          <div class="gl-panel-head">
+            <div class="ai-mark"><i class="fa fa-list"></i></div>
+            <div><h3>面板 Panel</h3><div class="sub">list rows + history</div></div>
+            <span class="gl-count">3</span>
+          </div>
+          <div class="gl-list">
+            <div class="gl-sugg"><div class="gl-sugg-top"><span class="gl-sugg-chip" style="background:var(--accent)"></span><span class="gl-sugg-name">片段 A</span><span class="gl-sugg-conf"><span class="gl-conf-num">94</span></span></div></div>
+            <div class="gl-sugg"><div class="gl-sugg-top"><span class="gl-sugg-chip" style="background:var(--accent)"></span><span class="gl-sugg-name">片段 B</span><span class="gl-sugg-conf"><span class="gl-conf-num">88</span></span></div></div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="preview-cap">命令栏 Command bar</div>
+      <footer class="glass gl-cmd">
+        <div class="gl-nav"><button class="gl-navbtn"><i class="fa fa-chevron-left"></i></button><button class="gl-navbtn"><i class="fa fa-chevron-right"></i></button></div>
+        <div class="gl-cmd-input"><i class="fa fa-terminal"></i><input placeholder="/命令…" /><span class="ret">↵</span></div>
+        <button class="gl-save"><i class="fa fa-save"></i> 保存</button>
+      </footer>
+
+    </div>
+  </div>
+  <script src="/vendor/glass/refract.js"></script>
+</body>
+</html>

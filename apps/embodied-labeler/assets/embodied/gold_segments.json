@@ -1,0 +1,5 @@
+[
+  { "start_frame": 0,   "end_frame": 25,  "skill_id": "reach", "instruction_text": "Approach the marker on the table" },
+  { "start_frame": 25,  "end_frame": 95,  "skill_id": "grasp", "instruction_text": "Close gripper around the marker and lift" },
+  { "start_frame": 95,  "end_frame": 167, "skill_id": "place", "instruction_text": "Move over the pot and release the marker" }
+]

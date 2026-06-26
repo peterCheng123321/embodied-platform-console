@@ -1,0 +1,49 @@
+{
+  "_comment": "Repository ruleset that protects main. NOT auto-applied — apply it once with the gh command in CONTRIBUTING.md (changing repo access controls is the admin's action), then verify it is live. Every required status-check context MUST equal a job `name:` in .github/workflows/ci.yml (matrix jobs expand the python-version), or that check never goes green and blocks all merges. Only well-known rule parameters are used here: an unknown key makes the whole POST fail with HTTP 422 and creates no ruleset.",
+  "name": "main protection",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["~DEFAULT_BRANCH"],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "always"
+    }
+  ],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": ["merge", "squash", "rebase"]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          { "context": "repository hygiene" },
+          { "context": "static frontend and design audit" },
+          { "context": "backend tests (Python 3.11, JSON store)" },
+          { "context": "backend tests (Python 3.13, JSON store)" },
+          { "context": "backend tests (Postgres repository)" },
+          { "context": "docker image build" },
+          { "context": "docker runtime smoke" }
+        ]
+      }
+    }
+  ]
+}
