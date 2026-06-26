@@ -680,10 +680,17 @@ class FocusChangedPayload(EventModel):
 
 class ViewportChangedPayload(EventModel):
     event_type: Literal["viewport.changed"] = "viewport.changed"
-    zoom: float = Field(gt=0)
-    pan_x: float
-    pan_y: float
+    zoom: float = Field(gt=0, allow_inf_nan=False)
+    pan_x: float = Field(allow_inf_nan=False)
+    pan_y: float = Field(allow_inf_nan=False)
     viewport_rect: tuple[float, float, float, float]
+
+    @field_validator("viewport_rect")
+    @classmethod
+    def _finite_viewport_rect(cls, value: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        if not all(math.isfinite(v) for v in value):
+            raise ValueError("viewport_rect coordinates must be finite (Infinity and NaN are not allowed)")
+        return value
 
 
 class HoverObservedPayload(EventModel):
