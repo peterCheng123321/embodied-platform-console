@@ -531,8 +531,8 @@ class MaskGeometry(EventModel):
 
 class KeypointGeometry(EventModel):
     shape: Literal["keypoint"] = "keypoint"
-    x: float = Field(ge=0)
-    y: float = Field(ge=0)
+    x: float = Field(ge=0, allow_inf_nan=False)
+    y: float = Field(ge=0, allow_inf_nan=False)
     visible: bool = True
     slice_index: int | None = Field(default=None, ge=0)
 
