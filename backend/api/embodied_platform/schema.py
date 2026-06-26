@@ -716,9 +716,9 @@ class ReviewOutcomePayload(EventModel):
 class GoldOutcomePayload(EventModel):
     event_type: Literal["gold.outcome"] = "gold.outcome"
     gold_task_id: UUID
-    iou: float = Field(ge=0, le=1)
+    iou: float = Field(ge=0, le=1, allow_inf_nan=False)
     class_match: bool
-    accuracy_score: float = Field(ge=0, le=1)
+    accuracy_score: float = Field(ge=0, le=1, allow_inf_nan=False)
 
 
 class ObjectFirstClickPayload(EventModel):
