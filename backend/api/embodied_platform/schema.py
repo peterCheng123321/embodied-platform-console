@@ -501,10 +501,10 @@ class QCReport(StrictModel):
 
 class BBoxGeometry(EventModel):
     shape: Literal["bbox"] = "bbox"
-    x: float = Field(ge=0)
-    y: float = Field(ge=0)
-    width: float = Field(gt=0)
-    height: float = Field(gt=0)
+    x: float = Field(ge=0, allow_inf_nan=False)
+    y: float = Field(ge=0, allow_inf_nan=False)
+    width: float = Field(gt=0, allow_inf_nan=False)
+    height: float = Field(gt=0, allow_inf_nan=False)
     slice_index: int | None = Field(default=None, ge=0)
 
 
