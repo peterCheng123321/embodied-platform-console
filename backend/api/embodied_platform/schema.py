@@ -1,6 +1,7 @@
 """Strict Pydantic schemas for the embodied-only platform API."""
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal, Union
 from uuid import UUID, uuid4
@@ -84,6 +85,13 @@ class EventModel(BaseModel):
         # at validation keeps both backends identical.
         if isinstance(value, str) and "\x00" in value:
             raise ValueError("string fields must not contain NUL (\\x00) bytes")
+        # Reject non-finite floats (Infinity / NaN) at the validation boundary
+        # so they never reach json.dump(allow_nan=False) in either backend and
+        # cause an unhandled ValueError → 500. Returns a clean 422 instead,
+        # consistent with the allow_inf_nan=False guards on ModelVersionCreate,
+        # QCThresholds, and QCEpisodeRow.
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("float fields must be finite (Infinity and NaN are not allowed)")
         return value
 
 
