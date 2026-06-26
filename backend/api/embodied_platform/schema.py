@@ -557,10 +557,17 @@ class ObjectCreatedPayload(EventModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
     origin: LabelOrigin
     prelabel_model: str | None = Field(default=None, max_length=120)
-    prelabel_confidence: float | None = Field(default=None, ge=0, le=1)
-    self_confidence: float | None = Field(default=None, ge=0, le=1)
+    prelabel_confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    self_confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
     first_click_xy: tuple[float, float] | None = None
     drawn_with: Literal["mouse", "hotkey", "sam_click", "sam_text", "tracker"] = "mouse"
+
+    @field_validator("first_click_xy")
+    @classmethod
+    def _finite_first_click_xy(cls, value: tuple[float, float] | None) -> tuple[float, float] | None:
+        if value is not None and not all(math.isfinite(v) for v in value):
+            raise ValueError("first_click_xy coordinates must be finite (Infinity and NaN are not allowed)")
+        return value
 
 
 class ObjectEditedPayload(EventModel):
@@ -568,7 +575,7 @@ class ObjectEditedPayload(EventModel):
     client_object_id: UUID
     edit_type: Literal["vertex_move", "resize", "translate", "reshape", "mask_paint"]
     new_geometry: EventGeometry
-    delta_px: float | None = Field(default=None, ge=0)
+    delta_px: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class ObjectDeletedPayload(EventModel):
@@ -604,7 +611,7 @@ class LabelSubmittedPayload(EventModel):
     duration_ms: int = Field(ge=0)
     active_ms: int = Field(ge=0)
     idle_ms: int = Field(ge=0)
-    self_confidence: float | None = Field(default=None, ge=0, le=1)
+    self_confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
 
 
 class LabelUnsubmittedPayload(EventModel):
@@ -664,7 +671,7 @@ class TaskSubmittedPayload(EventModel):
     duration_ms: int = Field(ge=0)
     active_ms: int = Field(ge=0)
     idle_ms: int = Field(ge=0)
-    self_confidence: float | None = Field(default=None, ge=0, le=1)
+    self_confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
 
 
 class TaskAbandonedPayload(EventModel):
@@ -725,6 +732,13 @@ class ObjectFirstClickPayload(EventModel):
     event_type: Literal["object.first_click"] = "object.first_click"
     client_object_id: UUID
     first_click_xy: tuple[float, float]
+
+    @field_validator("first_click_xy")
+    @classmethod
+    def _finite_first_click_xy(cls, value: tuple[float, float]) -> tuple[float, float]:
+        if not all(math.isfinite(v) for v in value):
+            raise ValueError("first_click_xy coordinates must be finite (Infinity and NaN are not allowed)")
+        return value
 
 
 class UnsureRaisedPayload(EventModel):
