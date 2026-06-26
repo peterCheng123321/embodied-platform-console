@@ -3,6 +3,7 @@
 Pins the hardened behavior of the platform auth + read paths:
 - injective HMAC principal encoding (no actor/role delimiter collisions),
 - authenticate-before-authorize (no role-set probing without a valid signature),
+- non-finite float (Infinity/NaN) in event payloads rejected as 422 not 500,
 - bytes-based hmac.compare_digest (non-ASCII input -> 401/403, never 500),
 - NaN-safe RequestValidationError handler (422 bodies stay spec JSON),
 - partial-merge PATCH /system/settings with repair-on-read,
@@ -374,3 +375,73 @@ def test_id_less_persisted_row_is_404_not_500_and_excluded_from_list(tmp_path, m
     listed = client.get("/api/embodied-platform/learning-queue")
     assert listed.status_code == 200, listed.text
     assert [item["id"] for item in listed.json()] == ["learn-ok"]
+
+
+# ---------------------------------------------------------------------------
+# Non-finite float (Infinity / NaN) in event payloads → 422, never 500
+# ---------------------------------------------------------------------------
+
+def _event_client(tmp_path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path))
+    from api.main import app
+    return TestClient(app, raise_server_exceptions=False)
+
+
+_TELEMETRY_TEMPLATE = (
+    '{{"events":[{{"event_id":"00000000-0000-0000-0000-000000000001",'
+    '"session_id":"00000000-0000-0000-0000-000000000002",'
+    '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+    '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+    '"payload":{{"event_type":"viewport.changed","zoom":1.0,'
+    '"pan_x":{pan_x},"pan_y":{pan_y},'
+    '"viewport_rect":[0,0,100,100]}}}}]}}'
+)
+
+
+def test_telemetry_event_inf_pan_x_is_422_not_500(tmp_path, monkeypatch):
+    """pan_x: Infinity must be rejected at the Pydantic boundary (422).
+    Before the fix, it passed validation and crashed json.dump(allow_nan=False)
+    in the repository as an unhandled ValueError → 500."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/telemetry",
+        content=_TELEMETRY_TEMPLATE.format(pan_x="Infinity", pan_y="0.0"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_telemetry_event_nan_pan_y_is_422_not_500(tmp_path, monkeypatch):
+    """pan_y: NaN must be rejected at the Pydantic boundary (422).
+    Before the fix, NaN comparisons were undefined and the value passed
+    validation, then crashed the serialization layer → 500."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/telemetry",
+        content=_TELEMETRY_TEMPLATE.format(pan_x="0.0", pan_y="NaN"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_label_event_bbox_inf_width_is_422_not_500(tmp_path, monkeypatch):
+    """BBoxGeometry with width: Infinity must be rejected at the Pydantic
+    boundary (422). gt=0 evaluates to True for +inf, so without allow_inf_nan=False
+    the value passed validation and crashed json.dump(allow_nan=False) → 500."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/label",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"task_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"object.created",'
+            '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+            '"class_id":"00000000-0000-0000-0000-000000000005",'
+            '"geometry":{"shape":"bbox","x":0,"y":0,"width":Infinity,"height":1},'
+            '"origin":"human","drawn_with":"mouse"}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
