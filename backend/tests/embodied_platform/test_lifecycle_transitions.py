@@ -149,7 +149,7 @@ def test_blocked_run_reached_via_api_can_be_failed(tmp_path, monkeypatch):
     for index in range(1, 6):
         _add_attempt(client, run["id"], "task_02", index, status="uploaded")
     for index in range(6, 9):
-        _add_attempt(client, run["id"], "task_02", index, status="deleted")
+        _add_attempt(client, run["id"], "task_02", index, status="recorded")
     runs = client.get(f"{API}/collection-runs").json()
     assert next(r for r in runs if r["id"] == run["id"])["status"] == "blocked"
 
