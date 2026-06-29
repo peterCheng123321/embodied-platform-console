@@ -1,4 +1,5 @@
 const API = {
+  state: '/api/embodied-platform/state',
   datasets: '/api/embodied-platform/datasets',
   episodes: '/api/embodied-platform/episodes',
   imports: '/api/embodied-platform/imports',
@@ -706,6 +707,22 @@ async function loadDemoState(preferSaved = true) {
 
 async function loadLiveState() {
   state.ready = false;
+  try {
+    const liveData = await apiGet(API.state);
+    state.data = normaliseState(liveData);
+    state.ready = true;
+    state.degraded = false;
+    state.liveFailures = [];
+    state.demoSavedAt = null;
+    setStatus(true, currentPrincipal().signature ? 'API 已连接' : 'API 已连接（只读）');
+    renderAll();
+    return;
+  } catch {
+    // Older or degraded backends may not expose the batched state endpoint.
+    // Fall back to the per-endpoint fan-out so one missing snapshot route does
+    // not force the whole app into offline demo mode.
+  }
+
   const results = await Promise.allSettled(LIVE_ENDPOINTS.map((endpoint) => apiGet(endpoint.url)));
   const successCount = results.filter((result) => result.status === 'fulfilled').length;
   if (successCount === 0) throw new Error('API 不可用，已切换到离线演示数据');

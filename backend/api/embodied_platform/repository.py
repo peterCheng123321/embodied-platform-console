@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from copy import deepcopy
 import fcntl
 import json
 import logging
@@ -37,6 +38,7 @@ COLLECTIONS = [
 ]
 
 _LOCKS: dict[Path, RLock] = {}
+_STATE_CACHE: dict[Path, tuple[tuple[int, int, int], dict[str, Any]]] = {}
 T = TypeVar("T")
 
 
@@ -96,12 +98,21 @@ def get_repository():
 class JsonRepository:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or state_path()
+        self._cache_key = self.path.resolve()
         self._lock = _lock_for(self.path)
 
     def read(self) -> dict[str, Any]:
         with self._lock:
             with self._file_lock(shared=True):
-                return self._read_unlocked()
+                signature = self._state_signature_unlocked()
+                if signature is not None:
+                    cached = _STATE_CACHE.get(self._cache_key)
+                    if cached is not None and cached[0] == signature:
+                        return deepcopy(cached[1])
+                state = self._read_unlocked()
+                if signature is not None:
+                    _STATE_CACHE[self._cache_key] = (signature, deepcopy(state))
+                return state
 
     def write(self, state: dict[str, Any]) -> None:
         with self._lock:
@@ -157,6 +168,13 @@ class JsonRepository:
             return empty_state()
         return coerce_state(state)
 
+    def _state_signature_unlocked(self) -> tuple[int, int, int] | None:
+        try:
+            stat = self.path.stat()
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size, stat.st_ino)
+
     def _write_unlocked(self, state: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_name(f"{self.path.name}.{uuid4().hex}.tmp")
@@ -169,5 +187,8 @@ class JsonRepository:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.path)
+            signature = self._state_signature_unlocked()
+            if signature is not None:
+                _STATE_CACHE[self._cache_key] = (signature, deepcopy(coerce_state(state)))
         finally:
             tmp.unlink(missing_ok=True)

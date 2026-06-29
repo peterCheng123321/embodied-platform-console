@@ -170,6 +170,7 @@ for (const action of primaryActions) {
 }
 
 for (const endpoint of [
+  '/api/embodied-platform/state',
   '/api/embodied-platform/datasets',
   '/api/embodied-platform/episodes',
   '/api/embodied-platform/imports',
@@ -202,6 +203,7 @@ assert.match(js, /localStorage/, 'offline demo writes should persist locally acr
 assert.match(js, /button\.disabled = !state\.ready \|\| Boolean\(writeBlockReason\(action\)\)/, 'live read-only mode should disable primary write controls');
 assert.match(js, /textInput\(/, 'offline form writes should validate required text before mutating state');
 assert.match(js, /state\.ready/, 'actions should be gated until initial state is loaded');
+assert.match(js, /apiGet\(API\.state\)/, 'live reads should prefer the single backend state snapshot before per-endpoint fallback');
 assert.match(js, /Promise\.allSettled/, 'live reads should not silently downgrade the whole app to demo mode on one endpoint failure');
 assert.match(js, /assertOfflineReference/, 'offline-only reference checks should not block fresh live backend writes');
 assert.match(js, /refreshState\(\)/, 'live writes should refresh canonical backend state after mutation');
