@@ -364,7 +364,7 @@ def _attempts_for_run(state: dict[str, Any], run_id: str) -> list[dict[str, Any]
 
 
 def _uploaded_status(status: str) -> bool:
-    return status in {"uploaded", "ready_for_review", "accepted", "rejected", "rework"}
+    return status in {"uploaded", "ready_for_review", "accepted"}
 
 
 def _progress_for_run(state: dict[str, Any], run: dict[str, Any]) -> CollectionRunProgress:
