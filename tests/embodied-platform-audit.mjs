@@ -364,6 +364,13 @@ for (const id of ['login-toggle', 'login-form', 'login-actor', 'login-role', 'lo
   assert.match(html, new RegExp(`id="${id}"`), `login control #${id} should exist`);
 }
 assert.match(html, /role="dialog"/, 'login form should be an accessible dialog');
+// Required login fields must expose their requirement to assistive tech. The
+// dialog is a div (not a <form>), so native `required` is inert — aria-required
+// is the correct semantic. actor is client-validated non-empty; passcode is
+// backend-required (SessionRequest.passcode min_length=1). role has a default
+// option so it is never empty and is intentionally not marked.
+assert.match(html, /id="login-actor"[^>]*aria-required="true"/, 'required login actor field should set aria-required');
+assert.match(html, /id="login-passcode"[^>]*aria-required="true"/, 'required login passcode field should set aria-required');
 assert.match(js, /\/api\/embodied-platform\/session/, 'login should call the session endpoint');
 assert.match(js, /sessionStorage\.setItem\('embodied\.signature'/, 'login should store the signed principal signature');
 assert.match(js, /sessionStorage\.removeItem\('embodied\.signature'/, 'logout should clear the stored signature');
