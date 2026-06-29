@@ -118,7 +118,7 @@ def test_eight_attempts_with_too_few_uploads_blocks_task(tmp_path, monkeypatch):
     for index in range(1, 6):
         _add_attempt(client, run["id"], "task_02", index, status="uploaded")
     for index in range(6, 9):
-        _add_attempt(client, run["id"], "task_02", index, status="deleted")
+        _add_attempt(client, run["id"], "task_02", index, status="recorded")
 
     progress = client.get(f"/api/embodied-platform/collection-runs/{run['id']}/progress").json()
     task = next(item for item in progress["tasks"] if item["task_id"] == "task_02")
@@ -189,3 +189,44 @@ def test_unknown_task_and_issue_code_are_rejected(tmp_path, monkeypatch):
         },
     )
     assert bad_issue.status_code == 422
+
+
+def test_collection_attempt_create_rejects_review_decision_status(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    run = _create_run(client)
+
+    for review_status in ("accepted", "rejected", "rework"):
+        resp = client.post(
+            f"/api/embodied-platform/collection-runs/{run['id']}/attempts",
+            headers=_headers("annotator", "operator-a"),
+            json={
+                "task_id": "task_01",
+                "attempt_index": 1,
+                "video_uri": "file:///trial/task_01/attempt-1.mp4",
+                "status": review_status,
+            },
+        )
+        assert resp.status_code == 422, f"status={review_status!r} should be rejected but got {resp.status_code}"
+
+
+def test_collection_attempt_create_cannot_bypass_review_to_passed(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    run = _create_run(client)
+
+    for index in range(1, 7):
+        resp = client.post(
+            f"/api/embodied-platform/collection-runs/{run['id']}/attempts",
+            headers=_headers("annotator", "operator-a"),
+            json={
+                "task_id": "task_01",
+                "attempt_index": index,
+                "video_uri": f"file:///trial/task_01/attempt-{index}.mp4",
+                "status": "accepted",
+            },
+        )
+        assert resp.status_code == 422
+
+    progress = client.get(
+        f"/api/embodied-platform/collection-runs/{run['id']}/progress",
+    ).json()
+    assert progress["status"] != "passed"
