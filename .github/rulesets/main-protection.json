@@ -37,6 +37,7 @@
         "required_status_checks": [
           { "context": "repository hygiene" },
           { "context": "static frontend and design audit" },
+          { "context": "lint (ruff)" },
           { "context": "backend tests (Python 3.11, JSON store)" },
           { "context": "backend tests (Python 3.13, JSON store)" },
           { "context": "backend tests (Postgres repository)" },

@@ -28,8 +28,8 @@ scripts/fix-push.sh queue-retry-log "fix(queue): log swallowed projection error"
 ```
 
 `fix-push` runs a **fast subset** of CI's correctness gates locally (structural
-audit, JS syntax, backend JSON-store tests, whitespace/bytecode hygiene) before
-touching git, then cuts `fix/<slug>`, commits, pushes the branch, and opens a PR
+audit, JS syntax, **ruff lint**, backend JSON-store tests, whitespace/bytecode
+hygiene) before touching git, then cuts `fix/<slug>`, commits, pushes the branch, and opens a PR
 into `main`. It never writes to `main`. The subset is a quick smoke check — **CI
 is authoritative**: the Postgres and Docker jobs run only on the PR.
 
@@ -44,6 +44,7 @@ mismatched name never goes green and blocks all merges):
 
 - `repository hygiene`
 - `static frontend and design audit`
+- `lint (ruff)`
 - `backend tests (Python 3.11, JSON store)`
 - `backend tests (Python 3.13, JSON store)`
 - `backend tests (Postgres repository)`
