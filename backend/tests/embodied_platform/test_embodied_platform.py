@@ -159,6 +159,38 @@ def test_dataset_creation_and_listing_uses_json_repository(tmp_path, monkeypatch
     assert [item["name"] for item in listed.json()] == ["warehouse-pick-v1"]
 
 
+def test_state_snapshot_returns_frontend_boot_payload_from_one_route(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    dataset = _create_dataset(client)
+    episode = _create_episode(client, dataset["id"], "episode-000001")
+
+    response = client.get("/api/embodied-platform/state")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["datasets"][0]["id"] == dataset["id"]
+    assert body["episodes"][0]["id"] == episode["id"]
+    assert body["monitoring"]["dataset_count"] == 1
+    assert body["monitoring"]["episode_count"] == 1
+    assert body["system_settings"]["retention_days"] == 30
+    for key in [
+        "imports",
+        "annotation_tasks",
+        "collection_profiles",
+        "collection_runs",
+        "collection_attempts",
+        "training_jobs",
+        "models",
+        "simulation_jobs",
+        "deployments",
+        "learning_queue",
+        "queue",
+        "audit_events",
+    ]:
+        assert key in body
+
+
 def test_episode_creation_increments_dataset_and_rejects_missing_dataset(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     dataset = _create_dataset(client)
