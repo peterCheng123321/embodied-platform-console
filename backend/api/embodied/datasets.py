@@ -88,6 +88,16 @@ def list_datasets() -> list[DatasetInfo]:
             # still resolves "recorded", so direct episode fetches surface
             # their own errors.
             logger.warning("skipping recorded dataset (root unreadable): %s", exc)
+        except Exception as exc:
+            # Any other failure (corrupted info.json, broken parquet, missing
+            # fps key, multi-chunk unsupported, etc.) must also NOT 500 the
+            # registry — the always-available demo dataset must never be hidden
+            # behind a malformed recorded root. Log the full traceback so the
+            # operator can diagnose, then skip the recorded entry.
+            logger.warning(
+                "skipping recorded dataset (unexpected error reading %s): %s",
+                root, exc, exc_info=True,
+            )
     for item in _platform_lerobot_datasets():
         if item.id not in {info.id for info in infos}:
             infos.append(item)
