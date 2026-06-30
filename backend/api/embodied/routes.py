@@ -408,16 +408,29 @@ def get_dataset_episodes(dataset_id: str) -> list[dict]:
         # Zero-config default: served directly from assets/embodied, not the reader.
         return [_demo_episode_summary()]
     root = dataset_root_for(dataset_id)  # raises HTTPException(404) on unknown id
-    out: list[dict] = []
-    for ep in list_episodes(root):
-        out.append({
-            "episode_index": ep.episode_index,
-            "task": ep.task,
-            "length": ep.length,
-            "fps": ep.fps,
-            "has_annotations": _has_annotations(root, dataset_id, ep.episode_index),
-        })
-    return out
+    try:
+        out: list[dict] = []
+        for ep in list_episodes(root):
+            out.append({
+                "episode_index": ep.episode_index,
+                "task": ep.task,
+                "length": ep.length,
+                "fps": ep.fps,
+                "has_annotations": _has_annotations(root, dataset_id, ep.episode_index),
+            })
+        return out
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc))
+    except Exception as exc:
+        logger.exception(
+            "failed to list episodes for dataset %s at %s", dataset_id, root
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"failed to read dataset {dataset_id}: {exc}",
+        )
 
 
 @router.get("/datasets/{dataset_id}/episodes/{episode_index}/qc")
