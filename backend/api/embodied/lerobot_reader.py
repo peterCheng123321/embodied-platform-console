@@ -60,7 +60,16 @@ def _episodes_table_path(dataset_root: Path) -> Path:
 
 def list_episodes(dataset_root: Path) -> list[EpisodeMeta]:
     info = _info(dataset_root)
-    fps = float(info["fps"])
+    try:
+        fps = float(info["fps"])
+    except KeyError:
+        raise KeyError(
+            f"info.json missing required 'fps' key in {dataset_root}"
+        )
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"invalid fps value in info.json: {info['fps']!r} in {dataset_root}"
+        ) from exc
     cam_keys = _camera_keys(info)
     if not cam_keys:
         raise ValueError(f"no observation.images.* camera in {dataset_root}")
