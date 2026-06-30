@@ -27,7 +27,14 @@ class EpisodeMeta:
 
 
 def _info(dataset_root: Path) -> dict:
-    return json.loads((dataset_root / "meta" / "info.json").read_text())
+    path = dataset_root / "meta" / "info.json"
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise json.JSONDecodeError(
+            f"corrupted info.json in {dataset_root}: {exc.msg}",
+            exc.doc, exc.pos,
+        )
 
 
 def _camera_keys(info: dict) -> list[str]:
@@ -84,7 +91,13 @@ def list_episodes(dataset_root: Path) -> list[EpisodeMeta]:
         f"videos/{primary}/to_timestamp",
         "tasks",
     ]
-    table = pq.read_table(_episodes_table_path(dataset_root), columns=cols)
+    ep_path = _episodes_table_path(dataset_root)
+    try:
+        table = pq.read_table(ep_path, columns=cols)
+    except Exception as exc:
+        raise RuntimeError(
+            f"failed to read episodes parquet in {dataset_root}: {exc}"
+        ) from exc
 
     ep_idx = table.column("episode_index").to_pylist()
     from_idx = table.column("dataset_from_index").to_pylist()
