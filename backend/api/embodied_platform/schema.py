@@ -293,7 +293,7 @@ class CollectionAttempt(CollectionAttemptCreate):
     id: str
     run_id: str
     profile_id: str
-    status: CollectionAttemptStatus  # review path may set accepted/rejected/rework
+    status: CollectionAttemptStatus = "uploaded"  # review path may set accepted/rejected/rework
     deleted: bool = False
     recorded_at: str
     review: AttemptReview | None = None

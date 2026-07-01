@@ -192,10 +192,11 @@ def test_unknown_task_and_issue_code_are_rejected(tmp_path, monkeypatch):
 
 
 def test_create_rejects_review_decision_and_derived_statuses(tmp_path, monkeypatch):
-    """Review decisions must flow through PATCH /review, which records an
-    AttemptReview (reviewer attribution, check_results) and a collection.review
-    audit entry. If create accepted them, a client could drive a run into the
-    terminal 'passed' state with no review record at all (issue #5)."""
+    """Review decisions must flow through PATCH /collection-attempts/{id}/review,
+    which records an AttemptReview (reviewer attribution, check_results) and a
+    collection.review audit entry. If create accepted them, a client could
+    drive a run into the terminal 'passed' state with no review record at all
+    (issue #5)."""
     client = _client(tmp_path, monkeypatch)
     run = _create_run(client)
 
