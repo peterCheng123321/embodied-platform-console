@@ -169,6 +169,15 @@ for (const action of primaryActions) {
   assert.match(js, new RegExp(`case '${action}'|case "${action}"|${action}`), `${action} should be wired in JS`);
 }
 
+// Model activation must persist a real, operator-supplied success metric — never
+// a fabricated one. A hardcoded score would write an invented quality number to
+// the backend for every activated model, so the activate-model payload must read
+// the success field and validate it rather than embedding a literal.
+assert.doesNotMatch(js, /success:\s*0\.82/, 'activate-model must not fabricate a hardcoded success metric');
+assert.match(html, /id="model-success"/, 'model form should expose an operator-supplied success-rate input');
+assert.match(js, /value\(['"]model-success['"]\)/, 'activate-model handler should read the operator-supplied success field');
+assert.match(js, /FieldValidationError\(['"]model-success['"]/, 'activate-model handler should validate the success field range');
+
 for (const endpoint of [
   '/api/embodied-platform/state',
   '/api/embodied-platform/datasets',

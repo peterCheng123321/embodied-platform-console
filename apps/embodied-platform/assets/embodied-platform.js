@@ -1936,7 +1936,19 @@ async function runAction(action) {
         break;
       }
       case 'activate-model': {
-        const payload = { name: textInput('model-name', '模型名称'), version: textInput('model-version', '模型版本', 80), artifact_uri: textInput('model-uri', '产物 URI', 500), metrics: { success: 0.82 } };
+        // The success metric is operator-supplied, never fabricated: an empty
+        // field sends no metric (ModelVersionCreate.metrics defaults to {}), so
+        // we never persist an invented score to the backend on activation.
+        const successRaw = value('model-success').trim();
+        let metrics = {};
+        if (successRaw !== '') {
+          const success = Number(successRaw);
+          if (!Number.isFinite(success) || success < 0 || success > 1) {
+            throw new FieldValidationError('model-success', '成功率必须是 0 到 1 之间的数值');
+          }
+          metrics = { success };
+        }
+        const payload = { name: textInput('model-name', '模型名称'), version: textInput('model-version', '模型版本', 80), artifact_uri: textInput('model-uri', '产物 URI', 500), metrics };
         if (liveWrite) {
           try {
             const created = await apiWrite(API.models, payload);
