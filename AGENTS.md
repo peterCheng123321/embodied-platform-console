@@ -141,5 +141,5 @@ Both storage backends (JSON file and Postgres 16) must agree before anything mer
 ## Code style
 
 - Python targets ≥3.11, typed FastAPI + Pydantic v2; match the surrounding style and keep
-  changes surgical. Run `ruff check` before shipping (the lint gate is wired into CI/`fix-push`).
+  changes surgical. Run `ruff check` before shipping (PR #63 wires the lint gate into CI/`fix-push`; until it merges, run it manually).
 - Keep functions small and fail loud; the repo prefers explicit errors over silent fallbacks.
