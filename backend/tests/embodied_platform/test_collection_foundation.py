@@ -189,3 +189,44 @@ def test_unknown_task_and_issue_code_are_rejected(tmp_path, monkeypatch):
         },
     )
     assert bad_issue.status_code == 422
+
+
+def test_create_rejects_review_decision_and_derived_statuses(tmp_path, monkeypatch):
+    """Review decisions must flow through PATCH /review, which records an
+    AttemptReview (reviewer attribution, check_results) and a collection.review
+    audit entry. If create accepted them, a client could drive a run into the
+    terminal 'passed' state with no review record at all (issue #5)."""
+    client = _client(tmp_path, monkeypatch)
+    run = _create_run(client)
+
+    for banned in ("accepted", "rejected", "rework", "ready_for_review", "blocked"):
+        response = client.post(
+            f"/api/embodied-platform/collection-runs/{run['id']}/attempts",
+            headers=_headers("annotator", "operator-a"),
+            json={
+                "task_id": "task_01",
+                "attempt_index": 1,
+                "video_uri": "file:///trial/task_01/attempt-1.mp4",
+                "status": banned,
+            },
+        )
+        assert response.status_code == 422, f"create must reject status={banned!r}, got {response.status_code}"
+
+    # None of the rejected posts may have advanced the run toward 'passed'.
+    progress = client.get(f"/api/embodied-platform/collection-runs/{run['id']}/progress").json()
+    assert progress["status"] == "collecting"
+    assert all(task["accepted_count"] == 0 for task in progress["tasks"])
+    assert all(task["attempt_count"] == 0 for task in progress["tasks"])
+
+
+def test_create_still_accepts_deleted_status(tmp_path, monkeypatch):
+    """'deleted' is an ingest-stage operator action, not a review decision: the
+    console's 状态 select offers 已删除 and the create route maps it onto the
+    deleted flag — excluding it from the create whitelist would 422 a shipping
+    UI control."""
+    client = _client(tmp_path, monkeypatch)
+    run = _create_run(client)
+
+    attempt = _add_attempt(client, run["id"], "task_01", 1, status="deleted")
+    assert attempt["status"] == "deleted"
+    assert attempt["deleted"] is True
