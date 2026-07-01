@@ -6,8 +6,18 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
-from api.embodied.routes import router
+from api.embodied.routes import principal_annotator_id, router
 from tests.embodied.fixtures import build_synthetic_lerobot_dataset
+
+
+def _auth(actor: str, role: str = "annotator") -> dict[str, str]:
+    from api.embodied_platform.routes import sign_principal
+
+    return {
+        "X-Embodied-Actor": actor,
+        "X-Embodied-Role": role,
+        "X-Embodied-Signature": sign_principal(actor, role),
+    }
 
 
 @pytest.fixture
@@ -84,10 +94,11 @@ def test_list_episodes_has_annotations_true_for_api_saved_segments(recorded_clie
     unannotated and labelers would double-label.
     """
     client, _, _ = recorded_client
-    annotator_id = "22222222-2222-2222-2222-222222222222"
+    actor = "alice"
+    annotator_id = str(principal_annotator_id(actor))
     r = client.post(
         "/api/embodied/segments",
-        headers={"X-Annotator-Id": annotator_id},
+        headers=_auth(actor),
         json={
             "episode_id": "recorded_ep1",
             "annotator_id": annotator_id,
@@ -402,12 +413,13 @@ def test_demo_has_annotations_true_for_api_saved_segments(demo_client):
     inconsistently; a stamp re-filter would make the picker's annotated-marker
     lie False over real saved work.
     """
-    annotator_id = "33333333-3333-3333-3333-333333333333"
+    actor = "bob"
+    annotator_id = str(principal_annotator_id(actor))
     before = demo_client.get("/api/embodied/datasets/demo/episodes").json()
     assert before[0]["has_annotations"] is False
     r = demo_client.post(
         "/api/embodied/segments",
-        headers={"X-Annotator-Id": annotator_id},
+        headers=_auth(actor),
         json={
             "episode_id": "demo_episode",
             "annotator_id": annotator_id,
