@@ -445,3 +445,91 @@ def test_label_event_bbox_inf_width_is_422_not_500(tmp_path, monkeypatch):
         headers={"Content-Type": "application/json"},
     )
     assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_telemetry_viewport_rect_neg_inf_is_422_not_500(tmp_path, monkeypatch):
+    """viewport_rect is a tuple, so the scalar allow_inf_nan guards never see
+    its elements — only the _finite_viewport_rect validator does. -Infinity
+    also pins the negative branch, which no other test exercises."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/telemetry",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"session_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"viewport.changed","zoom":1.0,'
+            '"pan_x":0.0,"pan_y":0.0,'
+            '"viewport_rect":[0,0,-Infinity,100]}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_label_event_first_click_xy_inf_is_422_not_500(tmp_path, monkeypatch):
+    """ObjectCreatedPayload.first_click_xy is an optional tuple: an Infinity
+    coordinate would sail past every scalar field guard and crash
+    json.dump(allow_nan=False) in the repository → 500."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/label",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"task_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"object.created",'
+            '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+            '"class_id":"00000000-0000-0000-0000-000000000005",'
+            '"geometry":{"shape":"bbox","x":0,"y":0,"width":1,"height":1},'
+            '"origin":"human","drawn_with":"mouse",'
+            '"first_click_xy":[Infinity,5.0]}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_telemetry_object_first_click_nan_is_422_not_500(tmp_path, monkeypatch):
+    """ObjectFirstClickPayload.first_click_xy is a required tuple with its own
+    validator — distinct from ObjectCreatedPayload's optional one. It rides the
+    telemetry union (session envelope), not the label-event union."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/telemetry",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"session_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"object.first_click",'
+            '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+            '"first_click_xy":[NaN,5.0]}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_label_event_polygon_nan_vertex_is_422_not_500(tmp_path, monkeypatch):
+    """Polygon vertices are list[tuple[float, float]]: a NaN inside a vertex is
+    only caught by the per-vertex finite check in _no_explicit_close."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/label",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"task_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"object.created",'
+            '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+            '"class_id":"00000000-0000-0000-0000-000000000005",'
+            '"geometry":{"shape":"polygon","vertices":[[0,0],[10,0],[NaN,10]]},'
+            '"origin":"human","drawn_with":"mouse"}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
