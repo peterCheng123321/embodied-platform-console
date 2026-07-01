@@ -377,6 +377,21 @@ function updateTimeUI() {
     scrubFill.style.transform = `scaleX(${pct})`;
     if (!scrubBarWidthPx) scrubBarWidthPx = scrubBar.getBoundingClientRect().width;
     scrubHead.style.transform = `translateX(${pct * scrubBarWidthPx}px)`;
+    updateScrubAria();
+}
+
+// Keep the scrub bar's ARIA slider state in sync with the playhead so screen
+// readers announce the current frame on both playback and keyboard seeks.
+function updateScrubAria() {
+    const total = totalFrames();
+    const cur = frameOf(video.currentTime || 0);
+    scrubBar.setAttribute('aria-valuenow', String(cur));
+    if (isFinite(total) && total > 0) {
+        scrubBar.setAttribute('aria-valuemax', String(total));
+        scrubBar.setAttribute('aria-valuetext', `帧 ${cur} / ${total}`);
+    } else {
+        scrubBar.setAttribute('aria-valuetext', `帧 ${cur}`);
+    }
 }
 
 function stepFrame(delta) {
@@ -606,6 +621,27 @@ window.addEventListener('mousemove', (e) => {
     if (scrubDragging) seekFromScrub(e.clientX);
 });
 window.addEventListener('mouseup', () => { scrubDragging = false; });
+
+// Keyboard operability for the scrub bar (role="slider") — a keyboard-first tool
+// must not leave the transport mouse-only. Reuses stepFrame() so the pause /
+// JKL-reset behaviour and duration clamping match the ,/. transport keys; Home/
+// End are expressed as relative deltas so they route through the same seek path.
+scrubBar.addEventListener('keydown', (e) => {
+    const cur = frameOf(video.currentTime || 0);
+    let handled = true;
+    switch (e.key) {
+        case 'ArrowLeft':
+        case 'ArrowDown':  stepFrame(e.shiftKey ? -10 : -1); break;
+        case 'ArrowRight':
+        case 'ArrowUp':    stepFrame(e.shiftKey ?  10 :  1); break;
+        case 'PageDown':   stepFrame(-10); break;
+        case 'PageUp':     stepFrame(10); break;
+        case 'Home':       stepFrame(-cur); break;
+        case 'End':        stepFrame(totalFrames() - cur); break;
+        default:           handled = false;
+    }
+    if (handled) { e.preventDefault(); updateScrubAria(); }
+});
 
 document.addEventListener('keydown', (e) => {
     if (isEditableTarget(e)) return;

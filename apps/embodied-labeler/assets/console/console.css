@@ -348,9 +348,9 @@
 /* Instrument rule: transport controls stay visible without scrolling. The
    video's inline height (54vh) was sized for the old single-column page;
    !important because inline style. 38vh leaves room for controls + scrub.
-   NOTE: superseded on the live page by labeler-glass.css `.console #video`
+   NOTE: superseded on the live page by viewfinder.css §6d `.console #video`
    (min(27vh,300px)) — equal specificity (0,1,1) but it loads later, so this
-   38vh is the floating-layout fallback if labeler-glass.css is absent. */
+   38vh is the floating-layout fallback if the Viewfinder skin is absent. */
 .console #video { height: min(38vh, 360px) !important; }
 
 /* ---- XINGJU instrument grammar (spec 2026-06-12) ------------------------ */
