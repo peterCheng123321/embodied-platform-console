@@ -26,9 +26,11 @@ export XINGJU_EMBODIED_DATA_ROOT="${XINGJU_EMBODIED_DATA_ROOT:-$REPO_ROOT/backen
 export XINGJU_EMBODIED_CACHE_ROOT="${XINGJU_EMBODIED_CACHE_ROOT:-$REPO_ROOT/backend/data/embodied_cache}"
 
 PORT="${PORT:-8099}"
+HOST="${HOST:-127.0.0.1}"
 PY="${PYTHON:-python3}"
 
 echo "Embodied Platform Console"
+echo "  Bind:     ${HOST}:${PORT}"
 echo "  Console:  http://127.0.0.1:${PORT}/app/"
 echo "  Labeler:  http://127.0.0.1:${PORT}/labeler/"
 echo "  Login:    pick a write role + passcode '${XINGJU_EMBODIED_PLATFORM_LOGIN_PASSCODE}' (dev default)"
@@ -36,4 +38,4 @@ echo "  Data:     ${XINGJU_EMBODIED_PLATFORM_DATA_ROOT}"
 echo "  Segments: ${XINGJU_EMBODIED_DATA_ROOT}"
 echo
 
-exec "$PY" -m uvicorn api.main:app --port "$PORT"
+exec "$PY" -m uvicorn api.main:app --host "$HOST" --port "$PORT"

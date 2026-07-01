@@ -21,14 +21,15 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .embodied.routes import router as embodied_router
 from .embodied_platform.event_routes import router as event_ingest_router
-from .embodied_platform.routes import (
+from .embodied_platform.routes import router as embodied_platform_router
+from .embodied_platform.validation import (
     register_validation_handlers as register_embodied_platform_validation_handlers,
-    router as embodied_platform_router,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,9 @@ app.add_middleware(
     # If-Match optimistic-concurrency handshake (same-origin reads it freely).
     expose_headers=["ETag"],
 )
+
+# Compress text assets (the labeler ships ~590 KB of uncompressed JS/CSS).
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(embodied_platform_router)
 app.include_router(embodied_router)

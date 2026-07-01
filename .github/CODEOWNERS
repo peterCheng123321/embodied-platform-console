@@ -1,0 +1,4 @@
+# The repo admin owns every path, so each PR auto-requests their review.
+# Combined with the main ruleset's "1 approving review" rule, a write-access
+# contributor's PR is reviewed by the admin before it can merge into main.
+* @peterCheng123321

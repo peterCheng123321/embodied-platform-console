@@ -7,6 +7,8 @@ const appDir = path.join(root, 'apps', 'embodied-platform');
 const labelerDir = path.join(root, 'apps', 'embodied-labeler');
 const htmlPath = path.join(appDir, 'index.html');
 const cssPath = path.join(appDir, 'assets', 'embodied-platform.css');
+const platformGlassPath = path.join(appDir, 'assets', 'platform-glass.css');
+const glassRefractPath = path.join(root, 'apps', '_vendor', 'glass', 'refract.js');
 const jsPath = path.join(appDir, 'assets', 'embodied-platform.js');
 const manifestPath = path.join(appDir, 'assets', 'manifest.webmanifest');
 const iconPath = path.join(appDir, 'assets', 'icon.svg');
@@ -19,6 +21,8 @@ const eventRoutesPath = path.join(root, 'backend', 'api', 'embodied_platform', '
 assert.equal(fs.existsSync(appDir), true, 'apps/embodied-platform folder should exist');
 assert.equal(fs.existsSync(htmlPath), true, 'embodied platform index.html should exist');
 assert.equal(fs.existsSync(cssPath), true, 'embodied platform CSS should exist');
+assert.equal(fs.existsSync(platformGlassPath), true, 'embodied platform glass skin should exist');
+assert.equal(fs.existsSync(glassRefractPath), true, 'shared glass refraction runtime should exist');
 assert.equal(fs.existsSync(jsPath), true, 'embodied platform JS should exist');
 assert.equal(fs.existsSync(manifestPath), true, 'embodied platform PWA manifest should exist');
 assert.equal(fs.existsSync(iconPath), true, 'embodied platform should ship a PWA icon');
@@ -29,6 +33,8 @@ assert.equal(fs.existsSync(eventRoutesPath), true, 'unified host should own the 
 
 const html = fs.readFileSync(htmlPath, 'utf8');
 const css = fs.readFileSync(cssPath, 'utf8');
+const platformGlass = fs.readFileSync(platformGlassPath, 'utf8');
+const glassRefract = fs.readFileSync(glassRefractPath, 'utf8');
 const js = fs.readFileSync(jsPath, 'utf8');
 const manifest = fs.readFileSync(manifestPath, 'utf8');
 const icon = fs.readFileSync(iconPath, 'utf8');
@@ -95,6 +101,7 @@ assert.doesNotMatch(
 );
 assert.match(html, /<main class="platform-workspace"/, 'first screen should be the dense operational workspace');
 assert.doesNotMatch(html, /hero|landing|marketing/i, 'new app should not be a marketing landing page');
+assert.match(css, /\.platform-header\s*{[\s\S]*width: calc\(100% - clamp\(1rem, 2\.2vw, 2\.2rem\)\)[\s\S]*margin: clamp\(0\.55rem, 1\.2vw, 0\.9rem\) auto clamp\(0\.55rem, 1\.2vw, 0\.9rem\)[\s\S]*top: 0/, 'header should be a contained sticky bar, not a full-bleed viewport strip');
 
 // Unified platform seam: the full temporal labeler is no longer a separate
 // localhost app. The console hosts it and its /api/embodied compatibility
@@ -109,7 +116,8 @@ assert.match(backendMain, /app\.mount\(\s*"\/embodied-assets"/, 'host backend mu
 assert.match(backendMain, /app\.mount\(\s*"\/embodied-cache"/, 'host backend must serve materialized episode bundles');
 assert.match(backendPyproject, /"pyarrow>=16"/, 'host backend must declare pyarrow for recorded LeRobot dataset routes');
 assert.doesNotMatch(`${html}\n${js}\n${labelerHtml}\n${labelerJs}\n${labelerConsoleJs}`, /127\.0\.0\.1:8000|127\.0\.0\.1:8001|localhost:8000|localhost:8001/, 'unified platform UI must not call or link to split localhost apps');
-assert.match(labelerHtml, /assets\/embodied\/embodied\.js\?v=31/, 'hosted labeler should include the reviewed v31 temporal JS');
+const labelerJsVersion = labelerHtml.match(/assets\/embodied\/embodied\.js\?v=(\d+)/)?.[1];
+assert.ok(labelerJsVersion, 'hosted labeler should include a versioned temporal JS asset');
 assert.match(labelerJs, /escapeHtml\(skill\.label\)/, 'palette must escape skill labels (XSS sink)');
 const swSrc = fs.readFileSync(path.join(root, 'apps', 'embodied-platform', 'sw.js'), 'utf8');
 assert.match(swSrc, /mode === 'navigate'[\s\S]{0,200}caches\.match\('\.\/index\.html'\)/, 'sw must serve the app shell for offline navigations (URL-key mismatch fix)');
@@ -118,7 +126,7 @@ for (const tok of ['--r-1: 4px', '--r-2: 8px', '--motion-fast: 120ms', '--motion
   assert.ok(css.includes(tok), `platform css must carry the shared design token ${tok}`);
   assert.ok(labelerCss.includes(tok), `labeler css must carry the shared design token ${tok}`);
 }
-assert.doesNotMatch(`${css}\n${labelerCss}`, /transition:\s*all\b/, 'no transition:all anywhere (motion grammar)');
+assert.doesNotMatch(`${css}\n${labelerCss}\n${platformGlass}`, /transition:\s*all\b/, 'no transition:all anywhere (motion grammar)');
 assert.match(labelerJs, /If-Match/, 'labeler saves must carry the optimistic-concurrency If-Match token');
 assert.match(labelerJs, /409/, 'labeler must handle the stale-write conflict status');
 assert.match(labelerHtml, /<video[^>]*\bmuted\b/, 'labeler video must be muted (no audio track; Chrome power policy pauses unmuted video-only media)');
@@ -162,6 +170,7 @@ for (const action of primaryActions) {
 }
 
 for (const endpoint of [
+  '/api/embodied-platform/state',
   '/api/embodied-platform/datasets',
   '/api/embodied-platform/episodes',
   '/api/embodied-platform/imports',
@@ -174,6 +183,7 @@ for (const endpoint of [
   '/api/embodied-platform/simulation-jobs',
   '/api/embodied-platform/deployments',
   '/api/embodied-platform/learning-queue',
+  '/api/embodied-platform/queue',
   '/api/embodied-platform/monitoring/overview',
   '/api/embodied-platform/audit-events',
   '/api/embodied-platform/system/settings',
@@ -193,9 +203,26 @@ assert.match(js, /localStorage/, 'offline demo writes should persist locally acr
 assert.match(js, /button\.disabled = !state\.ready \|\| Boolean\(writeBlockReason\(action\)\)/, 'live read-only mode should disable primary write controls');
 assert.match(js, /textInput\(/, 'offline form writes should validate required text before mutating state');
 assert.match(js, /state\.ready/, 'actions should be gated until initial state is loaded');
+assert.match(js, /apiGet\(API\.state\)/, 'live reads should prefer the single backend state snapshot before per-endpoint fallback');
 assert.match(js, /Promise\.allSettled/, 'live reads should not silently downgrade the whole app to demo mode on one endpoint failure');
 assert.match(js, /assertOfflineReference/, 'offline-only reference checks should not block fresh live backend writes');
 assert.match(js, /refreshState\(\)/, 'live writes should refresh canonical backend state after mutation');
+assert.match(js, /function compactQueueDetail/, 'queue renderer should shorten long source/detail text before rendering');
+assert.match(js, /queueRecords\s*=\s*Array\.isArray\(data\.queue\)/, 'frontend should render queues straight from the backend unified projection (data.queue), not re-derive them client-side');
+assert.match(js, /function renderQueueList/, 'frontend should render queues through one universal card renderer');
+assert.match(js, /renderQueueList\('imports-list'/, 'imports should route through the universal queue renderer');
+assert.match(js, /renderQueueList\('training-list'/, 'training jobs should route through the universal queue renderer');
+assert.match(js, /renderQueueList\('simulation-list'/, 'simulation jobs should route through the universal queue renderer');
+assert.match(js, /renderQueueList\('deployment-list'/, 'deployments should route through the universal queue renderer');
+assert.match(js, /renderQueueList\('learning-list'/, 'learning queue should route through the universal queue renderer');
+assert.doesNotMatch(js, /table\('imports-list'/, 'imports-list should not use the generic dense table renderer');
+assert.doesNotMatch(js, /table\('training-list'/, 'training-list should not use the generic dense table renderer');
+assert.doesNotMatch(js, /table\('simulation-list'/, 'simulation-list should not use the generic dense table renderer');
+assert.doesNotMatch(js, /table\('deployment-list'/, 'deployment-list should not use the generic dense table renderer');
+assert.doesNotMatch(js, /table\('learning-list'/, 'learning-list should not use the generic dense table renderer');
+assert.match(css, /\.queue-list/, 'queue lists should share a universal operational layout');
+assert.match(css, /\.queue-card__detail/, 'queue details should have dedicated truncation styling');
+assert.match(css, /\.queue-card__progress/, 'queue cards should show a stable status/progress track');
 assert.match(html, /试采任务进度与复核/, 'collection panel should expose first-person trial progress and review');
 assert.match(html, /id="collection-task-matrix"/, 'collection task progress matrix should exist');
 assert.match(html, /id="collection-attempt-list"/, 'collection attempt queue should exist');
@@ -236,6 +263,24 @@ assert.match(css, /\.cell-label/, 'mobile table/card labels should be styled');
 assert.match(css, /\.module-panel\s*{[^}]*grid-column:\s*2/s, 'desktop module panels should be pinned to the main workspace column');
 assert.match(html, /embodied-platform\.css\?v=\d+/, 'CSS asset should be versioned to avoid stale service worker/browser cache');
 assert.match(html, /embodied-platform\.js\?v=\d+/, 'JS asset should be versioned to avoid stale service worker/browser cache');
+assert.match(html, /platform-glass\.css\?v=\d+/, 'glass skin asset should be versioned to avoid stale browser cache');
+assert.match(html, /platform-glass\.css\?v=6/, 'global glass material correction must ship behind a fresh cache-busted asset');
+assert.match(html, /\/vendor\/glass\/refract\.js\?v=2/, 'refraction runtime should be cache-busted after performance changes');
+assert.match(platformGlass, /GLOBAL MATERIAL CORRECTION/, 'platform glass must carry the final global material correction');
+const globalGlassCorrection = platformGlass.slice(platformGlass.indexOf('GLOBAL MATERIAL CORRECTION'));
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass/, 'global glass correction must out-specify earlier KPI .glass selectors');
+assert.match(globalGlassCorrection, /\.platform-workspace \.module-panel\.glass/, 'global glass correction must out-specify earlier panel .glass selectors');
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::before/, 'KPI tile specular rim must out-specify the earlier disabled .glass rim');
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::after/, 'KPI tile accent bar must have one winning global definition');
+assert.match(platformGlass, /--ops-glass-material:/, 'platform glass must define a lighter translucent material token');
+assert.match(platformGlass, /backdrop-filter:\s*blur\(38px\) saturate\(180%\) brightness\(1\.02\)/, 'major glass surfaces should use the corrected high-blur translucent material');
+assert.match(globalGlassCorrection, /\.platform-workspace \.summary-grid article\.glass::after\s*{[\s\S]*height:\s*3px[\s\S]*linear-gradient\(90deg, var\(--accent\)/, 'KPI tiles should use a single radius-safe brand accent bar');
+assert.match(globalGlassCorrection, /CONTENT PANE PERFORMANCE TIER/, 'platform glass must define a performance tier for large content panes');
+assert.match(globalGlassCorrection, /\.platform-workspace \.module-panel\.glass,[\s\S]*\.platform-workspace \.data-table\s*{[\s\S]*backdrop-filter:\s*none/, 'large content panes must not use live backdrop blur');
+assert.match(glassRefract, /maxArea/, 'glass refraction runtime must cap SVG refraction by rendered area');
+assert.match(glassRefract, /w \* h > maxArea[\s\S]*backdropFilter = ""/, 'oversized glass surfaces must fall back instead of receiving SVG backdrop filters');
+assert.match(platformGlass, /\.module-rail button\s*{[\s\S]*background-color 80ms var\(--ease\)[\s\S]*box-shadow 80ms var\(--ease\)/, 'module rail hover feedback should stay crisp');
+assert.match(platformGlass, /\.module-rail button::before\s*{[\s\S]*transition-duration: 90ms/, 'module rail active marker should not feel slow');
 const cssVersion = html.match(/embodied-platform\.css\?v=(\d+)/)?.[1];
 const jsVersion = html.match(/embodied-platform\.js\?v=(\d+)/)?.[1];
 
@@ -275,7 +320,8 @@ assert.doesNotMatch(css, /--bg:\s*#08110f/, 'old dark Ground Control background 
 // Fonts/scripts are vendored (deploy readiness A1): zero external CDN bytes.
 assert.match(html, /\/vendor\/fonts\/plex\.css/, 'platform must load the vendored Plex css (no external font CDN)');
 assert.doesNotMatch(`${html}\n${labelerHtml}`, /fonts\.googleapis|fonts\.gstatic|cdn\.tailwindcss|cdn\.jsdelivr/, 'no external CDN references — must be deployable behind the GFW');
-assert.match(labelerHtml, /\/vendor\/tailwind\/tailwind-play\.js/, 'labeler must load the vendored tailwind runtime');
+assert.match(labelerHtml, /assets\/console\/tailwind\.css\?v=\d+/, 'labeler must load compiled Tailwind CSS');
+assert.doesNotMatch(labelerHtml, /tailwind-play\.js/, 'labeler should not ship the Tailwind runtime on the hot path');
 assert.doesNotMatch(html, /Chakra\+Petch/, 'Chakra Petch should no longer be requested (Plex-only type system)');
 for (const stack of ['IBM Plex Sans SC', 'IBM Plex Mono']) {
   assert.match(css, new RegExp(stack), `CSS font stack should use ${stack}`);
@@ -320,6 +366,13 @@ for (const id of ['login-toggle', 'login-form', 'login-actor', 'login-role', 'lo
   assert.match(html, new RegExp(`id="${id}"`), `login control #${id} should exist`);
 }
 assert.match(html, /role="dialog"/, 'login form should be an accessible dialog');
+// Required login fields must expose their requirement to assistive tech. The
+// dialog is a div (not a <form>), so native `required` is inert — aria-required
+// is the correct semantic. actor is client-validated non-empty; passcode is
+// backend-required (SessionRequest.passcode min_length=1). role has a default
+// option so it is never empty and is intentionally not marked.
+assert.match(html, /id="login-actor"[^>]*aria-required="true"/, 'required login actor field should set aria-required');
+assert.match(html, /id="login-passcode"[^>]*aria-required="true"/, 'required login passcode field should set aria-required');
 assert.match(js, /\/api\/embodied-platform\/session/, 'login should call the session endpoint');
 assert.match(js, /sessionStorage\.setItem\('embodied\.signature'/, 'login should store the signed principal signature');
 assert.match(js, /sessionStorage\.removeItem\('embodied\.signature'/, 'logout should clear the stored signature');

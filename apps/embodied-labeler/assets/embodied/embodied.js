@@ -562,16 +562,6 @@ function setLoop(on) {
 
 btnLoop.addEventListener('click', () => setLoop(!loopEnabled));
 
-function enterSegmentQALoop(seg) {
-    // Normalize shuttle state before setLoop starts forward playback. Without
-    // this, committing from J-reverse can leave reverse rAF and native play
-    // fighting over currentTime.
-    if (typeof jklK === 'function') jklK();
-    state.selectedId = seg.id;
-    if (isFinite(video.duration)) video.currentTime = timeOfFrame(seg.start_frame);
-    if (typeof setLoop === 'function') setLoop(true);
-}
-
 // On every frame tick, if looping and we've crossed the selected segment's
 // end, snap back to its start. The check is cheap (one if + one math op).
 video.addEventListener('timeupdate', () => {
@@ -880,15 +870,34 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Plain 1-9: set the active skill (for the next segment created)
-    setActiveSkill(targetSkill);
-    // Brief flash on the activated pill so keyboard activation registers
-    // visually, not just via the .active ring transition.
-    const pill = palette.querySelectorAll('.skill-pill')[n - 1];
-    if (pill) {
-        pill.classList.add('flash');
-        setTimeout(() => pill.classList.remove('flash'), 240);
+    // Plain 1-9 — fast labeling. The skill key both selects the skill AND drives
+    // the segment, so you never have to click "Mark start":
+    //   • no segment open                 → select skill + open a start at the playhead
+    //   • segment open & playhead advanced → CHAIN: close the open segment (it keeps
+    //     the skill it was opened under) and open the next one here with the new
+    //     skill — so a contiguous trajectory is labelled by tapping the skill at
+    //     each transition while it plays. Press S to close the final segment.
+    //   • segment open, playhead not advanced → just switch the skill it commits under
+    const flashPill = () => {
+        const pill = palette.querySelectorAll('.skill-pill')[n - 1];
+        if (pill) {
+            pill.classList.add('flash');
+            setTimeout(() => pill.classList.remove('flash'), 240);
+        }
+    };
+    const curFrame = frameOf(video.currentTime || 0);
+
+    if (state.pendingStart !== null && curFrame > state.pendingStart) {
+        toggleSegment();              // close — commits under the CURRENT active skill
+        setActiveSkill(targetSkill);  // switch to the newly chosen skill
+        toggleSegment();              // open the next segment at this frame
+    } else if (state.pendingStart === null) {
+        setActiveSkill(targetSkill);
+        toggleSegment();              // open a labelled segment at the playhead
+    } else {
+        setActiveSkill(targetSkill);  // open but zero-width here → just set the skill
     }
+    flashPill();
 });
 
 renderPalette();
@@ -1628,17 +1637,18 @@ function commitSegmentRaw(start, end, skillId) {
         success: null,
     };
     state.segments.push(seg);
+    // Select the new segment (so it's ready to nudge/QA) but DON'T auto-loop.
+    // The old auto-QA-loop force-enabled playback looping on every commit, which
+    // trapped the video replaying each marked segment forever ("dead loop") and
+    // broke fast forward/chained marking. QA-loop is now opt-in: select a segment
+    // and press the Loop button or "\\" to watch its boundaries in a loop.
+    state.selectedId = seg.id;
+    if (typeof jklK === 'function') jklK();   // normalize shuttle state, no loop
     renderLanes();
     renderPendingGhost();   // clear the ghost overlay
     if (typeof renderSegmentList === 'function') renderSegmentList();
     if (typeof setDirty === 'function') setDirty(true);
-    // Auto-loop the just-created segment so the labeler can QA the boundaries
-    // immediately (research E.2 — Labelbox community pattern, "watch in a
-    // loop in their normal practice"). Replaces the previous auto-advance:
-    // QA-then-move-on beats commit-and-fly-past for boundary accuracy. To
-    // mark back-to-back without loop, press \\ once to disable.
-    enterSegmentQALoop(seg);
-    showToast(`Added ${skillId} [${start}, ${end}) — segment selected for QA`, 'success');
+    showToast(`Added ${skillId} [${start}, ${end})`, 'success');
 }
 
 function toggleSegment() {
@@ -2253,7 +2263,13 @@ async function saveAll({ auto = false } = {}) {
         const r = await fetchWithTimeout(`${API_BASE}/api/embodied/segments`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ episode_id: EPISODE_ID, annotator_id, segments }),
+            body: JSON.stringify({
+                episode_id: EPISODE_ID,
+                dataset_id: DATASET_ID,
+                episode_index: EPISODE_INDEX,
+                annotator_id,
+                segments,
+            }),
         }, localReProbe ? 5000 : 15000);
         if (r.status === 409) {
             // Stale write: another session saved since we last read. Handled
@@ -2276,9 +2292,10 @@ async function saveAll({ auto = false } = {}) {
         const newEtag = r.headers.get('ETag');
         if (newEtag) segmentsEtag = newEtag;
         saveConflict = false;
-        setStorageMode('backend', '后端同步已连接');
+        setStorageMode('backend', data.platform_synced ? '后端同步已连接 · 运营台已同步' : '后端同步已连接');
         if (!auto) {
-            showToast(`已保存 ${data.written} 个片段`, 'success');
+            const syncNote = data.platform_synced ? '，已同步运营台' : '，运营台未匹配';
+            showToast(`已保存 ${data.written} 个片段${syncNote}`, 'success');
         }
         if (state.saveEpoch === epoch) {
             clearLocalPendingSync(annotator_id);

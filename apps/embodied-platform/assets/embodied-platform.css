@@ -204,6 +204,10 @@ select:disabled {
    Header
    --------------------------------------------------------------------------- */
 .platform-header {
+  box-sizing: border-box;
+  width: calc(100% - clamp(1rem, 2.2vw, 2.2rem));
+  max-width: 1464px;
+  margin: clamp(0.55rem, 1.2vw, 0.9rem) auto clamp(0.55rem, 1.2vw, 0.9rem);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -856,6 +860,23 @@ select {
   display: none;
 }
 
+.table-action-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.table-action-link:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 .row:first-child {
   border-top: 0;
 }
@@ -888,6 +909,142 @@ select {
 .row.empty > span {
   font-family: var(--font-ui);
   color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------------------
+   Universal queue cards — one operational language for jobs and workflow queues
+   --------------------------------------------------------------------------- */
+.queue-list {
+  display: grid;
+  gap: 0.62rem;
+  padding: 0.7rem;
+}
+
+.queue-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8.5rem, 0.32fr);
+  gap: 1rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.82rem 0.9rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--st-neutral);
+  border-radius: var(--r-2);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.queue-card--info { border-left-color: var(--st-info); }
+.queue-card--ok { border-left-color: var(--st-ok); }
+.queue-card--warn { border-left-color: var(--st-warn); }
+.queue-card--danger { border-left-color: var(--st-danger); }
+.queue-card--faint { border-left-color: var(--ink-faint); }
+
+.queue-card__main,
+.queue-card__aside {
+  min-width: 0;
+  display: grid;
+  gap: 0.38rem;
+}
+
+.queue-card__topline,
+.queue-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.queue-card__kind {
+  color: var(--ink-faint);
+  font-family: var(--font-accent);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.queue-card h3 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-card__detail {
+  display: block;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-card__meta span,
+.queue-card__aside code,
+.queue-card__phase {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-1);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  padding: 0.18rem 0.45rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-card__aside {
+  justify-items: stretch;
+}
+
+.queue-card__aside code {
+  justify-self: end;
+}
+
+.queue-card__progress {
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: var(--r-1);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.queue-card__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  color: var(--st-neutral);
+}
+
+.queue-card--info .queue-card__progress span { color: var(--st-info); }
+.queue-card--ok .queue-card__progress span { color: var(--st-ok); }
+.queue-card--warn .queue-card__progress span { color: var(--st-warn); }
+.queue-card--danger .queue-card__progress span { color: var(--st-danger); }
+.queue-card--faint .queue-card__progress span { color: var(--ink-faint); }
+
+.queue-card__phase {
+  justify-self: end;
+}
+
+.queue-empty {
+  padding: 1rem;
+  color: var(--ink-faint);
+  text-align: center;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1237,6 +1394,17 @@ select {
 
   .collection-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .queue-card {
+    grid-template-columns: 1fr;
+  }
+
+  .queue-card__aside,
+  .queue-card__aside code,
+  .queue-card__phase {
+    justify-items: start;
+    justify-self: start;
   }
 }
 
