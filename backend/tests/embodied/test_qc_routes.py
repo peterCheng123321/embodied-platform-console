@@ -154,6 +154,7 @@ def test_demo_qc_counts_misses_and_false_positives(qc_client):
 
     assert r.status_code == 200, r.text
     score = r.json()["annotators"][0]
+    assert score["annotator_id"] == annotator
     assert score["matched_count"] == 1
     assert score["false_positive_count"] == 1
     assert score["miss_count"] == 2
