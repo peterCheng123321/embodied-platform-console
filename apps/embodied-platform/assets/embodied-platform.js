@@ -1752,10 +1752,11 @@ async function runAction(action) {
           task_type: 'trajectory_segment',
           assignee: textInput('annotation-assignee', '负责人'),
           status: value('annotation-status'),
-          labels: [
-            { start_frame: 0, end_frame: 64, skill_id: 'approach' },
-            { start_frame: 65, end_frame: 140, skill_id: 'grasp' },
-          ],
+          // No fabricated segments: a new task starts unlabeled. Real frame-range
+          // labels arrive from the temporal labeler via /api/embodied/segments ->
+          // sync_labeler_segments_to_platform(). Keep the key present (empty list)
+          // because the offline branch below reads payload.labels.length.
+          labels: [],
         };
         assertOfflineReference(liveWrite, () => requireEpisodeInDataset(datasetId, episodeId));
         if (liveWrite) {
