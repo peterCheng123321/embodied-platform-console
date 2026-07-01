@@ -324,7 +324,7 @@ def register_payload(rng: random.Random, run: dict[str, Any], force_duplicate: b
         "video_uri": f"file:///adversarial/{run['id']}/{task_id}/{attempt_index}-{rng.randrange(1000)}.mp4",
         "duration_seconds": round(rng.uniform(1, 300), 2),
         "frame_count": rng.randrange(1, 9000),
-        "status": rng.choice(["uploaded", "recorded", "draft"]),
+        "status": rng.choice(["uploaded", "recorded", "deleted"]),
         "transcript": rng.choice(["操作开始。操作结束，任务成功。", "任务名称：随机试采。正在执行动作。", ""]),
     }
 
@@ -393,7 +393,7 @@ def register_valid_attempt(world: CollectionWorld, step: int) -> None:
         "video_uri": f"file:///adversarial/{run['id']}/{task_id}/attempt-{attempt_index}.mp4",
         "duration_seconds": round(world.rng.uniform(1, 300), 2),
         "frame_count": world.rng.randrange(1, 9000),
-        "status": world.rng.choice(["uploaded", "recorded", "draft"]),
+        "status": world.rng.choice(["uploaded", "recorded", "deleted"]),
         "transcript": world.rng.choice(["操作开始。操作结束，任务成功。", "任务名称：随机试采。正在执行动作。", ""]),
     }
     world.post(

@@ -261,7 +261,7 @@ class CollectionAttemptCreate(StrictModel):
     video_uri: str = Field(min_length=1, max_length=500)
     duration_seconds: float | None = Field(default=None, ge=0, le=3600)
     frame_count: int | None = Field(default=None, ge=0, le=1000000)
-    status: Literal["draft", "recorded", "uploaded"] = "uploaded"
+    status: CollectionAttemptStatus = "uploaded"
     transcript: str | None = Field(default=None, max_length=2000)
 
 
@@ -287,7 +287,6 @@ class CollectionAttempt(CollectionAttemptCreate):
     id: str
     run_id: str
     profile_id: str
-    status: CollectionAttemptStatus  # review path may set accepted/rejected/rework
     deleted: bool = False
     recorded_at: str
     review: AttemptReview | None = None
