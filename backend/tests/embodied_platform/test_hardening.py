@@ -3,6 +3,7 @@
 Pins the hardened behavior of the platform auth + read paths:
 - injective HMAC principal encoding (no actor/role delimiter collisions),
 - authenticate-before-authorize (no role-set probing without a valid signature),
+- non-finite float (Infinity/NaN) in event payloads rejected as 422 not 500,
 - bytes-based hmac.compare_digest (non-ASCII input -> 401/403, never 500),
 - NaN-safe RequestValidationError handler (422 bodies stay spec JSON),
 - partial-merge PATCH /system/settings with repair-on-read,
@@ -374,3 +375,311 @@ def test_id_less_persisted_row_is_404_not_500_and_excluded_from_list(tmp_path, m
     listed = client.get("/api/embodied-platform/learning-queue")
     assert listed.status_code == 200, listed.text
     assert [item["id"] for item in listed.json()] == ["learn-ok"]
+
+
+# ---------------------------------------------------------------------------
+# Non-finite float (Infinity / NaN) in event payloads → 422, never 500
+# ---------------------------------------------------------------------------
+
+def _event_client(tmp_path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("XINGJU_EMBODIED_PLATFORM_DATA_ROOT", str(tmp_path))
+    from api.main import app
+    return TestClient(app, raise_server_exceptions=False)
+
+
+_TELEMETRY_TEMPLATE = (
+    '{{"events":[{{"event_id":"00000000-0000-0000-0000-000000000001",'
+    '"session_id":"00000000-0000-0000-0000-000000000002",'
+    '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+    '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+    '"payload":{{"event_type":"viewport.changed","zoom":1.0,'
+    '"pan_x":{pan_x},"pan_y":{pan_y},'
+    '"viewport_rect":[0,0,100,100]}}}}]}}'
+)
+
+
+def test_telemetry_event_inf_pan_x_is_422_not_500(tmp_path, monkeypatch):
+    """pan_x: Infinity must be rejected at the Pydantic boundary (422).
+    Before the fix, it passed validation and crashed json.dump(allow_nan=False)
+    in the repository as an unhandled ValueError → 500."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/telemetry",
+        content=_TELEMETRY_TEMPLATE.format(pan_x="Infinity", pan_y="0.0"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_telemetry_event_nan_pan_y_is_422_not_500(tmp_path, monkeypatch):
+    """pan_y: NaN must be rejected at the Pydantic boundary (422).
+    Before the fix, NaN comparisons were undefined and the value passed
+    validation, then crashed the serialization layer → 500."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/telemetry",
+        content=_TELEMETRY_TEMPLATE.format(pan_x="0.0", pan_y="NaN"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_label_event_bbox_inf_width_is_422_not_500(tmp_path, monkeypatch):
+    """BBoxGeometry with width: Infinity must be rejected at the Pydantic
+    boundary (422). gt=0 evaluates to True for +inf, so without allow_inf_nan=False
+    the value passed validation and crashed json.dump(allow_nan=False) → 500."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/label",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"task_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"object.created",'
+            '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+            '"class_id":"00000000-0000-0000-0000-000000000005",'
+            '"geometry":{"shape":"bbox","x":0,"y":0,"width":Infinity,"height":1},'
+            '"origin":"human","drawn_with":"mouse"}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_telemetry_viewport_rect_neg_inf_is_422_not_500(tmp_path, monkeypatch):
+    """viewport_rect is a tuple, so the scalar allow_inf_nan guards never see
+    its elements — only the _finite_viewport_rect validator does. -Infinity
+    also pins the negative branch, which no other test exercises."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/telemetry",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"session_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"viewport.changed","zoom":1.0,'
+            '"pan_x":0.0,"pan_y":0.0,'
+            '"viewport_rect":[0,0,-Infinity,100]}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_label_event_first_click_xy_inf_is_422_not_500(tmp_path, monkeypatch):
+    """ObjectCreatedPayload.first_click_xy is an optional tuple: an Infinity
+    coordinate would sail past every scalar field guard and crash
+    json.dump(allow_nan=False) in the repository → 500."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/label",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"task_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"object.created",'
+            '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+            '"class_id":"00000000-0000-0000-0000-000000000005",'
+            '"geometry":{"shape":"bbox","x":0,"y":0,"width":1,"height":1},'
+            '"origin":"human","drawn_with":"mouse",'
+            '"first_click_xy":[Infinity,5.0]}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_telemetry_object_first_click_nan_is_422_not_500(tmp_path, monkeypatch):
+    """ObjectFirstClickPayload.first_click_xy is a required tuple with its own
+    validator — distinct from ObjectCreatedPayload's optional one. It rides the
+    telemetry union (session envelope), not the label-event union."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/telemetry",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"session_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"object.first_click",'
+            '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+            '"first_click_xy":[NaN,5.0]}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_label_event_polygon_nan_vertex_is_422_not_500(tmp_path, monkeypatch):
+    """Polygon vertices are list[tuple[float, float]]: a NaN inside a vertex is
+    only caught by the per-vertex finite check in _no_explicit_close."""
+    client = _event_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/v1/events/label",
+        content=(
+            '{"events":[{"event_id":"00000000-0000-0000-0000-000000000001",'
+            '"task_id":"00000000-0000-0000-0000-000000000002",'
+            '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+            '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+            '"payload":{"event_type":"object.created",'
+            '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+            '"class_id":"00000000-0000-0000-0000-000000000005",'
+            '"geometry":{"shape":"polygon","vertices":[[0,0],[10,0],[NaN,10]]},'
+            '"origin":"human","drawn_with":"mouse"}}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+# ---------------------------------------------------------------------------
+# Non-finite floats in free-form attributes payloads -> 422 (bypass guard)
+# ---------------------------------------------------------------------------
+#
+# ObjectCreatedPayload.attributes and AttributeChangedPayload.attributes are
+# dict[str, Any] — the field-level _reject_nul only sees a dict, not the floats
+# inside it.  Without the recursive require_finite_numbers validator a client
+# could smuggle NaN / Infinity through attributes and still crash the storage
+# backends (json.dump(allow_nan=False) -> ValueError -> 500).
+
+_LABEL_TEMPLATE = (
+    '{{"events":[{{"event_id":"00000000-0000-0000-0000-000000000001",'
+    '"task_id":"00000000-0000-0000-0000-000000000002",'
+    '"annotator_id":"00000000-0000-0000-0000-000000000003",'
+    '"ts_client":"2026-01-01T00:00:00Z","schema_version":1,'
+    '"payload":{payload}}}]}}'
+)
+
+_OBJECT_CREATED_PAYLOAD = (
+    '"event_type":"object.created",'
+    '"client_object_id":"00000000-0000-0000-0000-000000000004",'
+    '"class_id":"00000000-0000-0000-0000-000000000005",'
+    '"geometry":{"shape":"bbox","x":0,"y":0,"width":1,"height":1},'
+    '"origin":"human","drawn_with":"mouse"'
+)
+
+_ATTR_CHANGED_PAYLOAD = (
+    '"event_type":"attribute.changed",'
+    '"client_object_id":"00000000-0000-0000-0000-000000000004"'
+)
+
+
+def _label_event_body(payload_fields: str) -> str:
+    """Build a /v1/events/label JSON body by splicing *payload_fields* inside the
+    payload object."""
+    return _LABEL_TEMPLATE.format(payload="{" + payload_fields + "}")
+
+
+def test_object_created_attributes_top_level_nan_is_422(tmp_path, monkeypatch):
+    """NaN at the top level of ObjectCreatedPayload.attributes -> 422."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = _OBJECT_CREATED_PAYLOAD + ',"attributes":{"score":NaN}'
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_object_created_attributes_top_level_infinity_is_422(tmp_path, monkeypatch):
+    """Infinity at the top level of ObjectCreatedPayload.attributes -> 422."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = _OBJECT_CREATED_PAYLOAD + ',"attributes":{"confidence":Infinity}'
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_object_created_attributes_top_level_neg_infinity_is_422(tmp_path, monkeypatch):
+    """-Infinity at the top level of ObjectCreatedPayload.attributes -> 422."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = _OBJECT_CREATED_PAYLOAD + ',"attributes":{"score":-Infinity}'
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_object_created_attributes_nested_list_nan_is_422(tmp_path, monkeypatch):
+    """NaN buried inside a list inside ObjectCreatedPayload.attributes -> 422."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = _OBJECT_CREATED_PAYLOAD + ',"attributes":{"scores":[0.9,NaN,0.8]}'
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_object_created_attributes_nested_dict_nan_is_422(tmp_path, monkeypatch):
+    """NaN buried inside a nested dict inside ObjectCreatedPayload.attributes -> 422."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = _OBJECT_CREATED_PAYLOAD + ',"attributes":{"meta":{"score":NaN}}'
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_object_created_attributes_deeply_nested_nan_is_422(tmp_path, monkeypatch):
+    """NaN buried in a list inside a dict inside attributes -> 422 (deep traversal)."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = _OBJECT_CREATED_PAYLOAD + ',"attributes":{"results":[{"v":1.0},{"v":NaN}]}'
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_attribute_changed_top_level_nan_is_422(tmp_path, monkeypatch):
+    """NaN at the top level of AttributeChangedPayload.attributes -> 422."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = _ATTR_CHANGED_PAYLOAD + ',"attributes":{"score":NaN}'
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_attribute_changed_nested_infinity_is_422(tmp_path, monkeypatch):
+    """Infinity nested inside AttributeChangedPayload.attributes -> 422."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = _ATTR_CHANGED_PAYLOAD + ',"attributes":{"metrics":{"iou":Infinity}}'
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"expected 422, got {response.status_code}: {response.text}"
+
+
+def test_object_created_attributes_with_finite_values_succeeds(tmp_path, monkeypatch):
+    """Attributes with only finite floats, ints, strings, and bools must pass
+    validation (the recursive guard must not false-positive on valid payloads)."""
+    client = _event_client(tmp_path, monkeypatch)
+    payload = (
+        _OBJECT_CREATED_PAYLOAD
+        + ',"attributes":{"score":0.95,"count":3,"nested":{"iou":0.72},"tags":["a","b"]}'
+    )
+    response = client.post(
+        "/v1/events/label",
+        content=_label_event_body(payload),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 200, f"unexpected {response.status_code}: {response.text}"

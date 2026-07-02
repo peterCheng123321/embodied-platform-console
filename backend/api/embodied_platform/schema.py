@@ -1,6 +1,7 @@
 """Strict Pydantic schemas for the embodied-only platform API."""
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal, Union
 from uuid import UUID, uuid4
@@ -53,6 +54,29 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def require_finite_numbers(value: Any, *, path: str = "$") -> None:
+    """Recursively validate that every float inside nested dict/list/tuple/set
+    structures is finite.  Non-finite floats (Infinity, -Infinity, NaN) are
+    rejected with a ``ValueError`` that names the traversal path so the caller
+    gets an actionable 422 detail.
+
+    Plain ``int`` values pass through — they cannot represent non-finite
+    magnitudes — as do ``str``, ``bool``, ``None``, and other non-numeric types.
+    """
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(
+                f"float value at {path} must be finite (Infinity and NaN are not allowed)"
+            )
+    elif isinstance(value, dict):
+        for key, val in value.items():
+            require_finite_numbers(val, path=f"{path}.{key!s}")
+    elif isinstance(value, (list, tuple, set)):
+        for i, item in enumerate(value):
+            require_finite_numbers(item, path=f"{path}[{i}]")
+    # int, str, bool, None, bytes, UUID, datetime, … are all safe.
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -84,6 +108,13 @@ class EventModel(BaseModel):
         # at validation keeps both backends identical.
         if isinstance(value, str) and "\x00" in value:
             raise ValueError("string fields must not contain NUL (\\x00) bytes")
+        # Reject non-finite floats (Infinity / NaN) at the validation boundary
+        # so they never reach json.dump(allow_nan=False) in either backend and
+        # cause an unhandled ValueError → 500. Returns a clean 422 instead,
+        # consistent with the allow_inf_nan=False guards on ModelVersionCreate,
+        # QCThresholds, and QCEpisodeRow.
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("float fields must be finite (Infinity and NaN are not allowed)")
         return value
 
 
@@ -500,10 +531,10 @@ class QCReport(StrictModel):
 
 class BBoxGeometry(EventModel):
     shape: Literal["bbox"] = "bbox"
-    x: float = Field(ge=0)
-    y: float = Field(ge=0)
-    width: float = Field(gt=0)
-    height: float = Field(gt=0)
+    x: float = Field(ge=0, allow_inf_nan=False)
+    y: float = Field(ge=0, allow_inf_nan=False)
+    width: float = Field(gt=0, allow_inf_nan=False)
+    height: float = Field(gt=0, allow_inf_nan=False)
     slice_index: int | None = Field(default=None, ge=0)
 
 
@@ -517,6 +548,9 @@ class PolygonGeometry(EventModel):
     def _no_explicit_close(cls, value: list[tuple[float, float]]) -> list[tuple[float, float]]:
         if len(value) >= 4 and value[0] == value[-1]:
             raise ValueError("polygon vertices must not repeat the first point at the end")
+        for x, y in value:
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError("polygon vertex coordinates must be finite (Infinity and NaN are not allowed)")
         return value
 
 
@@ -530,8 +564,8 @@ class MaskGeometry(EventModel):
 
 class KeypointGeometry(EventModel):
     shape: Literal["keypoint"] = "keypoint"
-    x: float = Field(ge=0)
-    y: float = Field(ge=0)
+    x: float = Field(ge=0, allow_inf_nan=False)
+    y: float = Field(ge=0, allow_inf_nan=False)
     visible: bool = True
     slice_index: int | None = Field(default=None, ge=0)
 
@@ -553,10 +587,28 @@ class ObjectCreatedPayload(EventModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
     origin: LabelOrigin
     prelabel_model: str | None = Field(default=None, max_length=120)
-    prelabel_confidence: float | None = Field(default=None, ge=0, le=1)
-    self_confidence: float | None = Field(default=None, ge=0, le=1)
+    prelabel_confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    self_confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
     first_click_xy: tuple[float, float] | None = None
     drawn_with: Literal["mouse", "hotkey", "sam_click", "sam_text", "tracker"] = "mouse"
+
+    @field_validator("attributes")
+    @classmethod
+    def _finite_attributes(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Reject NaN/Infinity anywhere inside the free-form attributes dict,
+        including nested lists and objects.  Without this guard a client can
+        bypass the scalar-field ``allow_inf_nan=False`` protections by hiding
+        non-finite floats inside ``attributes``, which would still crash
+        ``json.dump(allow_nan=False)`` in the storage backends (500)."""
+        require_finite_numbers(value, path="attributes")
+        return value
+
+    @field_validator("first_click_xy")
+    @classmethod
+    def _finite_first_click_xy(cls, value: tuple[float, float] | None) -> tuple[float, float] | None:
+        if value is not None and not all(math.isfinite(v) for v in value):
+            raise ValueError("first_click_xy coordinates must be finite (Infinity and NaN are not allowed)")
+        return value
 
 
 class ObjectEditedPayload(EventModel):
@@ -564,7 +616,7 @@ class ObjectEditedPayload(EventModel):
     client_object_id: UUID
     edit_type: Literal["vertex_move", "resize", "translate", "reshape", "mask_paint"]
     new_geometry: EventGeometry
-    delta_px: float | None = Field(default=None, ge=0)
+    delta_px: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class ObjectDeletedPayload(EventModel):
@@ -584,6 +636,13 @@ class AttributeChangedPayload(EventModel):
     client_object_id: UUID
     attributes: dict[str, Any]
 
+    @field_validator("attributes")
+    @classmethod
+    def _finite_attributes(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Reject NaN/Infinity anywhere inside the free-form attributes dict."""
+        require_finite_numbers(value, path="attributes")
+        return value
+
 
 class ActionUndoPayload(EventModel):
     event_type: Literal["action.undo"] = "action.undo"
@@ -600,7 +659,7 @@ class LabelSubmittedPayload(EventModel):
     duration_ms: int = Field(ge=0)
     active_ms: int = Field(ge=0)
     idle_ms: int = Field(ge=0)
-    self_confidence: float | None = Field(default=None, ge=0, le=1)
+    self_confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
 
 
 class LabelUnsubmittedPayload(EventModel):
@@ -660,7 +719,7 @@ class TaskSubmittedPayload(EventModel):
     duration_ms: int = Field(ge=0)
     active_ms: int = Field(ge=0)
     idle_ms: int = Field(ge=0)
-    self_confidence: float | None = Field(default=None, ge=0, le=1)
+    self_confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
 
 
 class TaskAbandonedPayload(EventModel):
@@ -676,10 +735,17 @@ class FocusChangedPayload(EventModel):
 
 class ViewportChangedPayload(EventModel):
     event_type: Literal["viewport.changed"] = "viewport.changed"
-    zoom: float = Field(gt=0)
-    pan_x: float
-    pan_y: float
+    zoom: float = Field(gt=0, allow_inf_nan=False)
+    pan_x: float = Field(allow_inf_nan=False)
+    pan_y: float = Field(allow_inf_nan=False)
     viewport_rect: tuple[float, float, float, float]
+
+    @field_validator("viewport_rect")
+    @classmethod
+    def _finite_viewport_rect(cls, value: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        if not all(math.isfinite(v) for v in value):
+            raise ValueError("viewport_rect coordinates must be finite (Infinity and NaN are not allowed)")
+        return value
 
 
 class HoverObservedPayload(EventModel):
@@ -705,15 +771,22 @@ class ReviewOutcomePayload(EventModel):
 class GoldOutcomePayload(EventModel):
     event_type: Literal["gold.outcome"] = "gold.outcome"
     gold_task_id: UUID
-    iou: float = Field(ge=0, le=1)
+    iou: float = Field(ge=0, le=1, allow_inf_nan=False)
     class_match: bool
-    accuracy_score: float = Field(ge=0, le=1)
+    accuracy_score: float = Field(ge=0, le=1, allow_inf_nan=False)
 
 
 class ObjectFirstClickPayload(EventModel):
     event_type: Literal["object.first_click"] = "object.first_click"
     client_object_id: UUID
     first_click_xy: tuple[float, float]
+
+    @field_validator("first_click_xy")
+    @classmethod
+    def _finite_first_click_xy(cls, value: tuple[float, float]) -> tuple[float, float]:
+        if not all(math.isfinite(v) for v in value):
+            raise ValueError("first_click_xy coordinates must be finite (Infinity and NaN are not allowed)")
+        return value
 
 
 class UnsureRaisedPayload(EventModel):
