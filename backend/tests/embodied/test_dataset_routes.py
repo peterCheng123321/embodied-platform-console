@@ -435,3 +435,30 @@ def test_demo_has_annotations_true_for_api_saved_segments(demo_client):
     assert r.status_code == 200, r.text
     after = demo_client.get("/api/embodied/datasets/demo/episodes").json()
     assert after[0]["has_annotations"] is True
+
+
+def test_list_datasets_skips_recorded_when_info_json_corrupted(recorded_client):
+    """A malformed recorded dataset (here: truncated info.json — a plausible
+    crash-during-write state) must not 500 the registry: the always-available
+    demo dataset would vanish from the labeler along with it. The registry
+    should skip the recorded entry and keep serving demo (issue #7)."""
+    client, ds_root, _ = recorded_client
+    (ds_root / "meta" / "info.json").write_text("{ not valid json")
+
+    r = client.get("/api/embodied/datasets")
+    assert r.status_code == 200, r.text
+    ids = [d["id"] for d in r.json()]
+    assert "demo" in ids
+    assert "recorded" not in ids
+
+
+def test_list_episodes_corrupted_dataset_returns_handled_500(recorded_client):
+    """Direct episode listing of the malformed dataset must surface a handled
+    HTTP 500 with a diagnosable detail message — not an unhandled traceback."""
+    client, ds_root, _ = recorded_client
+    (ds_root / "meta" / "info.json").write_text("{ not valid json")
+
+    app_client = TestClient(client.app, raise_server_exceptions=False)
+    r = app_client.get("/api/embodied/datasets/recorded/episodes")
+    assert r.status_code == 500
+    assert r.json()["detail"].startswith("failed to read dataset recorded")
