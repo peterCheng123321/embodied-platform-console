@@ -45,7 +45,7 @@
         <button type="button" id="logout-btn" class="btn-secondary" hidden>退出</button>
         <div id="login-form" role="dialog" aria-label="登录" hidden>
           <label class="login-field">操作者
-            <input id="login-actor" type="text" autocomplete="username" value="operator-a">
+            <input id="login-actor" type="text" autocomplete="username" value="operator-a" aria-required="true">
           </label>
           <label class="login-field">角色
             <select id="login-role">
@@ -59,7 +59,7 @@
             </select>
           </label>
           <label class="login-field">通行码
-            <input id="login-passcode" type="password" autocomplete="current-password">
+            <input id="login-passcode" type="password" autocomplete="current-password" aria-required="true">
           </label>
           <p class="login-hint">登录后将以签名身份解锁在线写入。</p>
           <div class="login-row">
@@ -243,6 +243,7 @@
       <div class="form-grid">
         <label>名称<input id="model-name" value="mobile-policy"></label>
         <label>版本<input id="model-version" value="1.1.0"></label>
+        <label>成功率<input id="model-success" type="number" min="0" max="1" step="0.01" placeholder="可选 0-1"></label>
         <label class="wide-field">产物 URI<input id="model-uri" value="models://mobile-policy/1.1.0"></label>
       </div>
       <div id="models-list" class="data-table"></div>

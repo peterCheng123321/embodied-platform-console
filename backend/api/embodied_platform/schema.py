@@ -269,7 +269,13 @@ class CollectionAttemptCreate(StrictModel):
     video_uri: str = Field(min_length=1, max_length=500)
     duration_seconds: float | None = Field(default=None, ge=0, le=3600)
     frame_count: int | None = Field(default=None, ge=0, le=1000000)
-    status: CollectionAttemptStatus = "uploaded"
+    # Ingest-only statuses: review decisions (accepted/rejected/rework) must go
+    # through PATCH /collection-attempts/{id}/review so an AttemptReview record
+    # and a collection.review audit entry exist; derived statuses
+    # (ready_for_review/blocked) are computed from progress. 'deleted' stays
+    # client-settable: the create route maps it to the deleted flag and the
+    # console's 状态 select offers 已删除.
+    status: Literal["draft", "recorded", "uploaded", "deleted"] = "uploaded"
     transcript: str | None = Field(default=None, max_length=2000)
 
 
@@ -295,6 +301,7 @@ class CollectionAttempt(CollectionAttemptCreate):
     id: str
     run_id: str
     profile_id: str
+    status: CollectionAttemptStatus = "uploaded"  # review path may set accepted/rejected/rework
     deleted: bool = False
     recorded_at: str
     review: AttemptReview | None = None

@@ -157,6 +157,76 @@ def test_repository_writes_spec_compliant_json_rejecting_nan(tmp_path):
 
 
 @_JSON_FILE_ONLY
+def test_json_repository_reuses_unchanged_state_snapshot_across_fresh_views(tmp_path, monkeypatch):
+    """Route dependencies construct a fresh JsonRepository per request.
+
+    Repeated GET fan-out should not re-open and re-parse the same unchanged
+    state.json for every fresh repository view.
+    """
+    import json as _json
+
+    from api.embodied_platform import repository as repository_module
+    from api.embodied_platform.repository import COLLECTIONS, JsonRepository
+
+    state = {name: [] for name in COLLECTIONS}
+    state["system_settings"] = {}
+    state["datasets"] = [{"id": "ds-cached", "name": "cached"}]
+    state_file = tmp_path / "state.json"
+    state_file.write_text(_json.dumps(state))
+
+    load_count = 0
+    real_load = repository_module.json.load
+
+    def counting_load(file_obj):
+        nonlocal load_count
+        load_count += 1
+        return real_load(file_obj)
+
+    monkeypatch.setattr(repository_module.json, "load", counting_load)
+
+    assert JsonRepository(state_file).read()["datasets"][0]["id"] == "ds-cached"
+    assert JsonRepository(state_file).read()["datasets"][0]["id"] == "ds-cached"
+    assert load_count == 1
+
+
+@_JSON_FILE_ONLY
+def test_json_repository_refreshes_snapshot_after_external_replace(tmp_path, monkeypatch):
+    """The read cache must be an IO optimization, not a stale-state source."""
+    import json as _json
+
+    from api.embodied_platform import repository as repository_module
+    from api.embodied_platform.repository import COLLECTIONS, JsonRepository
+
+    def state_with(dataset_id: str) -> dict:
+        state = {name: [] for name in COLLECTIONS}
+        state["system_settings"] = {}
+        state["datasets"] = [{"id": dataset_id, "name": dataset_id}]
+        return state
+
+    state_file = tmp_path / "state.json"
+    state_file.write_text(_json.dumps(state_with("ds-before")))
+
+    load_count = 0
+    real_load = repository_module.json.load
+
+    def counting_load(file_obj):
+        nonlocal load_count
+        load_count += 1
+        return real_load(file_obj)
+
+    monkeypatch.setattr(repository_module.json, "load", counting_load)
+
+    assert JsonRepository(state_file).read()["datasets"][0]["id"] == "ds-before"
+
+    replacement = tmp_path / "state.json.replacement"
+    replacement.write_text(_json.dumps(state_with("ds-after")))
+    os.replace(replacement, state_file)
+
+    assert JsonRepository(state_file).read()["datasets"][0]["id"] == "ds-after"
+    assert load_count == 2
+
+
+@_JSON_FILE_ONLY
 def test_unwritable_lock_path_still_serves_reads_200(tmp_path, monkeypatch):
     """A read-only / unwritable data root must NOT 500 every endpoint. The
     file lock is opened in append-create mode on the read path; if the lock file

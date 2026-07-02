@@ -102,6 +102,16 @@ done < <(find apps tests -type f \( -name '*.js' -o -name '*.mjs' \) -print0)
 node tests/embodied-platform-audit.mjs >/dev/null \
   || die "structural audit failed (run: node tests/embodied-platform-audit.mjs)"
 
+# Python lint (CI: lint (ruff)). Fail fast locally so an agent does not push and
+# then wait for CI to report a lint error.
+if command -v ruff >/dev/null 2>&1; then
+  ( cd backend && ruff check . ) || die "ruff lint failed (run: cd backend && ruff check .)"
+elif python3 -m ruff --version >/dev/null 2>&1; then
+  ( cd backend && python3 -m ruff check . ) || die "ruff lint failed (run: cd backend && python3 -m ruff check .)"
+else
+  die "ruff not found — install dev deps: python3 -m pip install -e 'backend[dev]'"
+fi
+
 # Backend suite against the JSON repository (CI: backend, fast subset).
 # Postgres + Docker jobs are authoritative on the PR; not run locally.
 ( cd backend && python3 -m pytest tests -q >/dev/null ) \

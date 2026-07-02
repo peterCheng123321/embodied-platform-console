@@ -107,6 +107,11 @@ assert.match(css, /\.platform-header\s*{[\s\S]*width: calc\(100% - clamp\(1rem, 
 // localhost app. The console hosts it and its /api/embodied compatibility
 // surface on the same origin.
 assert.match(html, /href="\/labeler\/\?dataset=demo&amp;episode=0"/, 'annotation module should open the hosted temporal labeler');
+// Because the labeler is the source-of-truth for segments, the platform must NOT
+// fabricate label boundaries when creating an annotation task: a new task starts
+// unlabeled and real frame ranges arrive via the labeler -> platform sync.
+assert.doesNotMatch(js, /skill_id:\s*'(approach|grasp)'/, 'platform must not fabricate annotation label segments; real segments come from the temporal labeler sync');
+assert.match(js, /task_type: 'trajectory_segment'[\s\S]*?labels: \[\]/, 'save-annotation should create an unlabeled task (labels: []), not invented skill boundaries');
 assert.match(backendMain, /from \.embodied\.routes import router as embodied_router/, 'host backend must include the temporal labeler API router');
 assert.match(backendMain, /from \.embodied_platform\.event_routes import router as event_ingest_router/, 'host backend must include the retired event ingest router');
 assert.match(backendMain, /app\.include_router\(embodied_router\)/, 'host backend must mount /api/embodied routes');
@@ -169,7 +174,17 @@ for (const action of primaryActions) {
   assert.match(js, new RegExp(`case '${action}'|case "${action}"|${action}`), `${action} should be wired in JS`);
 }
 
+// Model activation must persist a real, operator-supplied success metric — never
+// a fabricated one. A hardcoded score would write an invented quality number to
+// the backend for every activated model, so the activate-model payload must read
+// the success field and validate it rather than embedding a literal.
+assert.doesNotMatch(js, /success:\s*0\.82/, 'activate-model must not fabricate a hardcoded success metric');
+assert.match(html, /id="model-success"/, 'model form should expose an operator-supplied success-rate input');
+assert.match(js, /value\(['"]model-success['"]\)/, 'activate-model handler should read the operator-supplied success field');
+assert.match(js, /FieldValidationError\(['"]model-success['"]/, 'activate-model handler should validate the success field range');
+
 for (const endpoint of [
+  '/api/embodied-platform/state',
   '/api/embodied-platform/datasets',
   '/api/embodied-platform/episodes',
   '/api/embodied-platform/imports',
@@ -202,6 +217,7 @@ assert.match(js, /localStorage/, 'offline demo writes should persist locally acr
 assert.match(js, /button\.disabled = !state\.ready \|\| Boolean\(writeBlockReason\(action\)\)/, 'live read-only mode should disable primary write controls');
 assert.match(js, /textInput\(/, 'offline form writes should validate required text before mutating state');
 assert.match(js, /state\.ready/, 'actions should be gated until initial state is loaded');
+assert.match(js, /apiGet\(API\.state\)/, 'live reads should prefer the single backend state snapshot before per-endpoint fallback');
 assert.match(js, /Promise\.allSettled/, 'live reads should not silently downgrade the whole app to demo mode on one endpoint failure');
 assert.match(js, /assertOfflineReference/, 'offline-only reference checks should not block fresh live backend writes');
 assert.match(js, /refreshState\(\)/, 'live writes should refresh canonical backend state after mutation');
@@ -359,11 +375,34 @@ assert.match(js, /mon-gauge__fill/, 'sim success rate should render as a gauge')
 assert.match(js, /sim_success_rate/, 'monitoring gauge should read sim_success_rate');
 assert.match(js, /MONITORING_TILE_KEYS[\s\S]*unknownEntries/, 'unknown monitoring metrics should fall back to the table');
 
+// Learning queue ordering: the operator-chosen priority must actually rank the
+// queue, not just paint a badge. The queue is rendered in priority order so the
+// most urgent work surfaces first instead of inheriting raw backend order.
+assert.match(js, /const PRIORITY_RANK\s*=\s*\{[^}]*urgent[^}]*high[^}]*normal[^}]*low[^}]*\}/, 'learning queue should define a PRIORITY_RANK map ordering urgent before low');
+assert.match(js, /recordsFor\('learning'\)\][\s\S]{0,40}\.sort\(/, 'learning queue should sort a copy of its records by priority before rendering');
+// Pin the actual ranking, not the key spelling: an inverted map ({urgent: 3,
+// low: 0}) would render urgent work LAST while every grep above still passes.
+// Evaluate the literal and assert the order relation the sort depends on.
+const priorityRankLiteral = js.match(/const PRIORITY_RANK\s*=\s*(\{[^}]*\})/)[1];
+const priorityRank = new Function(`return (${priorityRankLiteral});`)();
+assert.ok(
+  priorityRank.urgent < priorityRank.high && priorityRank.high < priorityRank.normal && priorityRank.normal < priorityRank.low,
+  `PRIORITY_RANK must rank urgent < high < normal < low numerically (ascending sort puts urgent first); got ${JSON.stringify(priorityRank)}`,
+);
+assert.match(js, /\.sort\(\(a,\s*b\)\s*=>\s*\(PRIORITY_RANK\[a\.priority\][^)]*\)\s*-\s*\(PRIORITY_RANK\[b\.priority\]/, 'learning queue comparator must sort ascending by rank (a minus b), so lowest rank value renders first');
+
 // Login control (spec §5) — ids present + wired to /session with sessionStorage principal.
 for (const id of ['login-toggle', 'login-form', 'login-actor', 'login-role', 'login-passcode', 'login-submit', 'principal-label', 'logout-btn']) {
   assert.match(html, new RegExp(`id="${id}"`), `login control #${id} should exist`);
 }
 assert.match(html, /role="dialog"/, 'login form should be an accessible dialog');
+// Required login fields must expose their requirement to assistive tech. The
+// dialog is a div (not a <form>), so native `required` is inert — aria-required
+// is the correct semantic. actor is client-validated non-empty; passcode is
+// backend-required (SessionRequest.passcode min_length=1). role has a default
+// option so it is never empty and is intentionally not marked.
+assert.match(html, /id="login-actor"[^>]*aria-required="true"/, 'required login actor field should set aria-required');
+assert.match(html, /id="login-passcode"[^>]*aria-required="true"/, 'required login passcode field should set aria-required');
 assert.match(js, /\/api\/embodied-platform\/session/, 'login should call the session endpoint');
 assert.match(js, /sessionStorage\.setItem\('embodied\.signature'/, 'login should store the signed principal signature');
 assert.match(js, /sessionStorage\.removeItem\('embodied\.signature'/, 'logout should clear the stored signature');

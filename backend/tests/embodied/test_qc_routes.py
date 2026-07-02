@@ -5,7 +5,17 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.embodied.routes import router
+from api.embodied.routes import principal_annotator_id, router
+
+
+def _auth(actor: str, role: str = "annotator") -> dict[str, str]:
+    from api.embodied_platform.routes import sign_principal
+
+    return {
+        "X-Embodied-Actor": actor,
+        "X-Embodied-Role": role,
+        "X-Embodied-Signature": sign_principal(actor, role),
+    }
 
 
 @pytest.fixture
@@ -17,7 +27,8 @@ def qc_client(tmp_path, monkeypatch):
     return TestClient(app)
 
 
-def _post_segments(client: TestClient, annotator_id: str, segments: list[dict]) -> None:
+def _post_segments(client: TestClient, actor: str, segments: list[dict]) -> None:
+    annotator_id = str(principal_annotator_id(actor))
     body = {
         "episode_id": "demo_episode",
         "annotator_id": annotator_id,
@@ -32,17 +43,18 @@ def _post_segments(client: TestClient, annotator_id: str, segments: list[dict]) 
     }
     r = client.post(
         "/api/embodied/segments",
-        headers={"X-Annotator-Id": annotator_id},
+        headers=_auth(actor),
         json=body,
     )
     assert r.status_code == 200, r.text
 
 
 def test_demo_qc_scores_perfect_annotator_against_gold(qc_client):
-    annotator = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    actor = "alice"
+    annotator = str(principal_annotator_id(actor))
     _post_segments(
         qc_client,
-        annotator,
+        actor,
         [
             {"start_frame": 0, "end_frame": 25, "skill_id": "reach"},
             {"start_frame": 25, "end_frame": 95, "skill_id": "grasp"},
@@ -127,10 +139,11 @@ def test_score_annotator_below_cap_is_not_flagged():
 
 
 def test_demo_qc_counts_misses_and_false_positives(qc_client):
-    annotator = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    actor = "bob"
+    annotator = str(principal_annotator_id(actor))
     _post_segments(
         qc_client,
-        annotator,
+        actor,
         [
             {"start_frame": 0, "end_frame": 25, "skill_id": "reach"},
             {"start_frame": 120, "end_frame": 150, "skill_id": "handover"},
@@ -141,6 +154,7 @@ def test_demo_qc_counts_misses_and_false_positives(qc_client):
 
     assert r.status_code == 200, r.text
     score = r.json()["annotators"][0]
+    assert score["annotator_id"] == annotator
     assert score["matched_count"] == 1
     assert score["false_positive_count"] == 1
     assert score["miss_count"] == 2
