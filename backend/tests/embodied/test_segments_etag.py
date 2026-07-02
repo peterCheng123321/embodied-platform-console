@@ -9,8 +9,6 @@ and the manual "save again" retry after a conflict.
 """
 from __future__ import annotations
 
-from uuid import uuid4
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -32,9 +30,21 @@ def client(embodied_app):
     return TestClient(embodied_app)
 
 
-def _auth(ann: str) -> dict[str, str]:
-    """Helper: build the X-Annotator-Id header all real callers send."""
-    return {"X-Annotator-Id": ann}
+def _auth(actor: str, role: str = "annotator") -> dict[str, str]:
+    """Signed platform principal headers (issue #2). The segment routes derive
+    annotator_id from this authenticated actor."""
+    from api.embodied_platform.routes import sign_principal
+    return {
+        "X-Embodied-Actor": actor,
+        "X-Embodied-Role": role,
+        "X-Embodied-Signature": sign_principal(actor, role),
+    }
+
+
+def _annotator_id(actor: str) -> str:
+    """The derived annotator_id the server will store for this actor."""
+    from api.embodied.routes import principal_annotator_id
+    return str(principal_annotator_id(actor))
 
 
 def _seg(ann: str, start: int = 0, end: int = 10) -> dict:
@@ -42,10 +52,15 @@ def _seg(ann: str, start: int = 0, end: int = 10) -> dict:
             "start_frame": start, "end_frame": end, "skill_id": "reach"}
 
 
-def _post(client, ann, segs, if_match=None, header_ann=None):
-    headers = _auth(header_ann if header_ann is not None else ann)
+def _post(client, actor, segs, if_match=None, headers=None):
+    # Identity is derived from the signed actor; the body annotator_id is
+    # ignored by the server (issue #2) but kept here so callers can assert the
+    # on-disk path, which uses the derived id == _annotator_id(actor).
+    ann = _annotator_id(actor)
+    if headers is None:
+        headers = _auth(actor)
     if if_match is not None:
-        headers["If-Match"] = if_match
+        headers = {**headers, "If-Match": if_match}
     return client.post(
         "/api/embodied/segments",
         json={"episode_id": "demo_episode", "annotator_id": ann, "segments": segs},
@@ -53,10 +68,11 @@ def _post(client, ann, segs, if_match=None, header_ann=None):
     )
 
 
-def _get(client, ann, headers=None):
+def _get(client, actor, headers=None):
+    ann = _annotator_id(actor)
     return client.get(
         f"/api/embodied/segments?episode_id=demo_episode&annotator_id={ann}",
-        headers=headers if headers is not None else _auth(ann),
+        headers=headers if headers is not None else _auth(actor),
     )
 
 
@@ -64,14 +80,15 @@ class TestEtagHeaders:
     def test_get_returns_etag_zero_before_first_write(self, client):
         # ETag is present even for a not-yet-existing file (value: "0"), so a
         # first save can still be conflict-checked against "nothing written".
-        ann = str(uuid4())
-        r = _get(client, ann)
+        actor = "alice"
+        r = _get(client, actor)
         assert r.status_code == 200
         assert r.headers.get("ETag") == "0"
 
     def test_post_returns_new_etag(self, client):
-        ann = str(uuid4())
-        r = _post(client, ann, [_seg(ann)])
+        actor = "alice"
+        ann = _annotator_id(actor)
+        r = _post(client, actor, [_seg(ann)])
         assert r.status_code == 200
         etag = r.headers.get("ETag")
         assert etag and etag != "0"
@@ -79,18 +96,20 @@ class TestEtagHeaders:
     def test_get_after_post_returns_matching_etag(self, client):
         # The token a client reads must equal the token the write produced,
         # otherwise the first save after a reload would always 409.
-        ann = str(uuid4())
-        post_r = _post(client, ann, [_seg(ann)])
-        get_r = _get(client, ann)
+        actor = "alice"
+        ann = _annotator_id(actor)
+        post_r = _post(client, actor, [_seg(ann)])
+        get_r = _get(client, actor)
         assert post_r.headers["ETag"] == get_r.headers["ETag"]
 
     def test_etag_changes_after_every_successful_write(self, client):
         # mtime_ns must advance across atomic os.replace on each write, or a
         # stale tab could overwrite without tripping the If-Match check.
-        ann = str(uuid4())
+        actor = "alice"
+        ann = _annotator_id(actor)
         seen = set()
         for i in range(3):
-            r = _post(client, ann, [_seg(ann, i * 10, i * 10 + 5)])
+            r = _post(client, actor, [_seg(ann, i * 10, i * 10 + 5)])
             assert r.status_code == 200
             seen.add(r.headers["ETag"])
         assert len(seen) == 3
@@ -100,32 +119,36 @@ class TestIfMatchConcurrency:
     def test_post_without_if_match_force_overwrites(self, client):
         # Backwards-compat: clients that don't send If-Match still win. This
         # is also the deliberate force-overwrite path after a 409.
-        ann = str(uuid4())
-        assert _post(client, ann, [_seg(ann)]).status_code == 200
-        assert _post(client, ann, [_seg(ann, 20, 30)]).status_code == 200
+        actor = "alice"
+        ann = _annotator_id(actor)
+        assert _post(client, actor, [_seg(ann)]).status_code == 200
+        assert _post(client, actor, [_seg(ann, 20, 30)]).status_code == 200
 
     def test_post_with_matching_if_match_succeeds(self, client):
-        ann = str(uuid4())
-        etag1 = _post(client, ann, [_seg(ann)]).headers["ETag"]
-        r2 = _post(client, ann, [_seg(ann, 20, 30)], if_match=etag1)
+        actor = "alice"
+        ann = _annotator_id(actor)
+        etag1 = _post(client, actor, [_seg(ann)]).headers["ETag"]
+        r2 = _post(client, actor, [_seg(ann, 20, 30)], if_match=etag1)
         assert r2.status_code == 200
         assert r2.headers["ETag"] != etag1  # etag advances on every write
 
     def test_first_save_with_if_match_zero_succeeds(self, client):
         # A tab that read before any file existed holds etag "0"; its first
         # save must go through (nothing to conflict with yet).
-        ann = str(uuid4())
-        initial = _get(client, ann).headers["ETag"]
-        assert _post(client, ann, [_seg(ann)], if_match=initial).status_code == 200
+        actor = "alice"
+        ann = _annotator_id(actor)
+        initial = _get(client, actor).headers["ETag"]
+        assert _post(client, actor, [_seg(ann)], if_match=initial).status_code == 200
 
     def test_post_with_stale_if_match_rejected_409(self, client, tmp_path):
-        ann = str(uuid4())
+        actor = "alice"
+        ann = _annotator_id(actor)
         # Tab B reads the initial etag (file doesn't exist yet → "0").
-        initial_etag = _get(client, ann).headers["ETag"]
+        initial_etag = _get(client, actor).headers["ETag"]
         # Tab A writes first (no If-Match, so it succeeds).
-        assert _post(client, ann, [_seg(ann)]).status_code == 200
+        assert _post(client, actor, [_seg(ann)]).status_code == 200
         # Tab B now tries to write with its stale token.
-        b = _post(client, ann, [_seg(ann, 50, 60)], if_match=initial_etag)
+        b = _post(client, actor, [_seg(ann, 50, 60)], if_match=initial_etag)
         assert b.status_code == 409
         detail = b.json()["detail"]
         assert detail["error"] == "stale_write"
@@ -137,30 +160,40 @@ class TestIfMatchConcurrency:
         assert '"start_frame":50' not in out.read_text().replace(" ", "")
 
 
-class TestAnnotatorHeaderStillEnforced:
-    """ETag plumbing must not weaken the X-Annotator-Id defense-in-depth."""
+class TestPrincipalSignatureEnforced:
+    """ETag plumbing must not weaken the principal-signature auth (issue #2)."""
 
-    def test_post_with_if_match_but_no_annotator_header_is_rejected(self, client):
-        ann = str(uuid4())
+    def test_post_with_if_match_but_no_signature_is_rejected(self, client):
+        # A concurrency token without a signed principal is still unauthenticated:
+        # the auth dependency rejects it with 403 before any write.
+        actor = "alice"
+        ann = _annotator_id(actor)
         r = client.post(
             "/api/embodied/segments",
             json={"episode_id": "demo_episode", "annotator_id": ann,
                   "segments": [_seg(ann)]},
             headers={"If-Match": "0"},  # concurrency token but no identity
         )
-        assert r.status_code == 422  # FastAPI missing-header validation
-
-    def test_post_auth_mismatch_beats_stale_if_match(self, client, tmp_path):
-        # Auth check runs before the concurrency check: a mismatched header
-        # gets 403 (not 409), and nothing is written.
-        ann = str(uuid4())
-        other = str(uuid4())
-        r = _post(client, ann, [_seg(ann)], if_match="12345", header_ann=other)
         assert r.status_code == 403
-        assert "annotator_id mismatch" in r.text
+
+    def test_post_forged_signature_beats_stale_if_match(self, client, tmp_path):
+        # Auth check runs before the concurrency check: a forged signature gets
+        # 403 (not 409) even with a stale If-Match, and nothing is written.
+        actor = "alice"
+        ann = _annotator_id(actor)
+        r = _post(
+            client, actor, [_seg(ann)], if_match="12345",
+            headers={
+                "X-Embodied-Actor": actor,
+                "X-Embodied-Role": "annotator",
+                "X-Embodied-Signature": "forged",
+            },
+        )
+        assert r.status_code == 403
+        assert "invalid embodied platform principal signature" in r.text
         assert not (tmp_path / "demo_episode" / "meta" / "annotations" / ann).exists()
 
-    def test_get_without_annotator_header_is_rejected(self, client):
-        ann = str(uuid4())
-        r = _get(client, ann, headers={})
-        assert r.status_code == 422
+    def test_get_without_signature_is_rejected(self, client):
+        actor = "alice"
+        r = _get(client, actor, headers={})
+        assert r.status_code == 403

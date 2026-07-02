@@ -127,21 +127,44 @@ def _generate_sprite(clip_mp4: Path, dst_png: Path, duration: float) -> None:
     ], timeout=FFMPEG_TIMEOUT_SECONDS)
 
 
+def _single_media_file(directory: Path, pattern: str, label: str) -> Path:
+    """Resolve the one chunk/file under ``directory`` matching ``pattern``.
+
+    Mirrors lerobot_reader._episodes_table_path's fail-loud contract: multi-chunk
+    concatenation is a later-phase TODO, so >1 match raises NotImplementedError
+    rather than silently reading file-000 and slicing it with the GLOBAL row
+    indices that overrun its end. The meta side already fails loud; the data and
+    video sides must match it instead of sealing empty/truncated proprio behind
+    the .complete sentinel (issue #3).
+    """
+    matches = sorted(directory.rglob(pattern))
+    if not matches:
+        raise FileNotFoundError(f"no {label} under {directory}")
+    if len(matches) > 1:
+        raise NotImplementedError(
+            f"multi-chunk {label} not yet supported; "
+            f"found {len(matches)} files under {directory}"
+        )
+    return matches[0]
+
+
 def _extract_proprio(
-    dataset_root: Path,
+    pq_path: Path,
     from_index: int,
     to_index: int,
     channels: list[int],
 ) -> list:
-    """Slice observation.state rows [from_index:to_index] from the combined parquet.
+    """Slice observation.state rows [from_index:to_index] from the data parquet.
 
-    No max_frames cap (prep caps to TRIM_SECONDS); the full slice survives so the
-    proprio length equals the episode length. Single channel -> flat list[float];
-    multiple channels -> list[list[float]], one inner list per frame.
+    `pq_path` is the single data chunk/file resolved by `_single_media_file`
+    (multi-file datasets fail loud upstream, so the global from/to indices here
+    always address this one file). No max_frames cap (prep caps to TRIM_SECONDS);
+    the full slice survives so the proprio length equals the episode length.
+    Single channel -> flat list[float]; multiple channels -> list[list[float]],
+    one inner list per frame.
     """
     import pyarrow.parquet as pq_lib  # Phase-1 dependency
 
-    pq_path = dataset_root / "data" / "chunk-000" / "file-000.parquet"
     t = pq_lib.read_table(pq_path, columns=["observation.state"])
     state = t["observation.state"].to_pylist()  # list[list[float]]
     sliced = state[from_index:to_index]
@@ -188,7 +211,15 @@ def materialize(
     camera = camera_key or ep.camera_keys[0]
     channels = proprio_channels if proprio_channels is not None else [_default_state_dim(dataset_root)]
     duration = ep.to_timestamp - ep.from_timestamp
-    src_mp4 = dataset_root / "videos" / camera / "chunk-000" / "file-000.mp4"
+
+    # Resolve the data parquet and camera video with the same fail-loud
+    # single-chunk contract the reader enforces on meta/episodes (issue #3):
+    # a data/video file that spans >1 chunk/file would be sliced/seeked with
+    # global indices that overrun file-000 and silently corrupt the bundle.
+    # Resolved before ffmpeg so a multi-file dataset raises without doing work
+    # or leaving a partial output dir.
+    data_pq = _single_media_file(dataset_root / "data", "*.parquet", "data parquet")
+    src_mp4 = _single_media_file(dataset_root / "videos" / camera, "*.mp4", "episode video")
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -196,7 +227,7 @@ def materialize(
     _generate_sprite(bundle.clip, bundle.sprite, duration)
 
     proprio = _extract_proprio(
-        dataset_root, ep.dataset_from_index, ep.dataset_to_index, channels
+        data_pq, ep.dataset_from_index, ep.dataset_to_index, channels
     )
     bundle.proprio.write_text(json.dumps(proprio))
 

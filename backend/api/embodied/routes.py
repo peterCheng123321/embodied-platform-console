@@ -18,13 +18,14 @@ import logging
 import os
 import threading
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid5
 
-from fastapi import APIRouter, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from api.embodied_platform.annotation_sync import AnnotationSyncResult, sync_labeler_segments_to_platform
+from api.embodied_platform.routes import annotation_actor
 
 from .schema import SubtaskSegment
 from .datasets import DEMO_ROOT, DatasetInfo, list_datasets, dataset_root_for
@@ -36,12 +37,22 @@ from .qc import score_annotator
 logger = logging.getLogger(__name__)
 
 
-# TODO(auth): replace this header-equals-body check with a real per-annotator
-# token (signed cookie or bearer JWT) issued by the platform login flow. The
-# current check is defense-in-depth only — it rejects co-resident origins that
-# tamper with the request body, but a caller who knows the annotator_id can
-# still forge the header. Localhost-only CORS (see api/main.py) is what keeps
-# this safe today; this header gap will become real the moment CORS opens up.
+# Auth (issue #2): segment writes/reads are gated by Depends(annotation_actor),
+# which verifies the platform principal HMAC signature (X-Embodied-Signature)
+# exactly as the platform router does. The annotator_id is then DERIVED from the
+# authenticated actor — never taken from the forgeable X-Annotator-Id header or
+# the request body — so a caller can no longer read/overwrite another
+# annotator's labels just by echoing a UUID.
+
+# Stable namespace for deriving a per-annotator UUID from a signed principal's
+# actor string. uuid5 is deterministic, so the same authenticated actor always
+# maps to the same annotator_id (and thus the same on-disk annotation store).
+_ANNOTATOR_NAMESPACE = UUID("a9f3b2c1-4d5e-5f6a-8b7c-1e2d3f4a5b6c")
+
+
+def principal_annotator_id(actor: str) -> UUID:
+    """The annotator_id owned by an authenticated principal's actor."""
+    return uuid5(_ANNOTATOR_NAMESPACE, actor)
 
 
 router = APIRouter(prefix="/api/embodied", tags=["embodied"])
@@ -271,8 +282,14 @@ def _etag(path: Path) -> str:
 
 class SegmentsRequest(BaseModel):
     episode_id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
-    annotator_id: UUID
-    segments: list[SubtaskSegment]
+    # Ignored for identity (issue #2): the authoritative annotator_id is derived
+    # from the authenticated principal, not this client-supplied value. Kept
+    # optional for backward-compatible request bodies that still send it.
+    annotator_id: UUID | None = None
+    # Bounded list: the primary disk-exhaustion guard. A signed principal still
+    # cannot write an unbounded number of segments in one request (the
+    # Content-Length cap in api/main.py is coarse defense-in-depth on top).
+    segments: list[SubtaskSegment] = Field(max_length=2000)
     dataset_id: str | None = Field(default=None, min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
     episode_index: int | None = Field(default=None, ge=0)
     sync_to_platform: bool = True
@@ -292,14 +309,16 @@ class SegmentsResponse(BaseModel):
 def post_segments(
     req: SegmentsRequest,
     response: Response,
-    x_annotator_id: UUID = Header(..., alias="X-Annotator-Id"),
+    principal: dict = Depends(annotation_actor),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ) -> SegmentsResponse:
-    # Defense-in-depth: body annotator_id and header must agree, so a
-    # body-tampering attempt from a co-resident origin fails closed.
-    if x_annotator_id != req.annotator_id:
-        raise HTTPException(status_code=403, detail="annotator_id mismatch")
-    out = _segments_path(req.episode_id, req.annotator_id)
+    # Identity comes from the authenticated principal (HMAC-signed actor+role),
+    # never the request body/header (issue #2): derive the annotator_id from the
+    # actor and stamp it onto every record so the stored identity can't be
+    # spoofed and one annotator can't overwrite another's labels.
+    annotator_id = principal_annotator_id(principal["actor"])
+    segments = [seg.model_copy(update={"annotator_id": annotator_id}) for seg in req.segments]
+    out = _segments_path(req.episode_id, annotator_id)
     # Optimistic concurrency: when If-Match is supplied, fail with 409 if the
     # file has changed since the client last read it. Omitting If-Match is a
     # deliberate force-overwrite (the manual "save" retry after a conflict).
@@ -323,7 +342,7 @@ def post_segments(
     tmp = out.with_suffix(out.suffix + ".tmp")
     try:
         with tmp.open("w") as f:
-            for seg in req.segments:
+            for seg in segments:
                 f.write(seg.model_dump_json() + "\n")
             f.flush()
             os.fsync(f.fileno())
@@ -344,14 +363,14 @@ def post_segments(
                 dataset_id=req.dataset_id,
                 episode_id=req.episode_id,
                 episode_index=req.episode_index,
-                annotator_id=req.annotator_id,
-                segments=req.segments,
+                annotator_id=annotator_id,
+                segments=segments,
             )
         except Exception as exc:
             logger.warning("platform annotation sync failed for %s: %s", req.episode_id, exc)
             sync_result = AnnotationSyncResult(False, reason="platform sync failed")
     return SegmentsResponse(
-        written=len(req.segments),
+        written=len(segments),
         platform_synced=bool(sync_result and sync_result.synced),
         platform_task_id=sync_result.task_id if sync_result else None,
         platform_sync_reason=sync_result.reason if sync_result else None,
@@ -362,14 +381,12 @@ def post_segments(
 def get_segments(
     response: Response,
     episode_id: str = Query(..., min_length=1, pattern=r"^[A-Za-z0-9_-]+$"),
-    annotator_id: UUID = Query(...),
-    x_annotator_id: UUID = Header(..., alias="X-Annotator-Id"),
+    principal: dict = Depends(annotation_actor),
 ) -> list[SubtaskSegment]:
-    # Defense-in-depth: caller must echo the queried annotator_id in the
-    # header so a co-resident origin can't read another annotator's labels
-    # just by guessing the UUID.
-    if x_annotator_id != annotator_id:
-        raise HTTPException(status_code=403, detail="annotator_id mismatch")
+    # Reads are scoped to the authenticated principal's own annotator_id (issue
+    # #2): an annotator can only read their own labels, derived from the signed
+    # actor — not an arbitrary UUID supplied in the query/header.
+    annotator_id = principal_annotator_id(principal["actor"])
     path = _segments_path(episode_id, annotator_id)
     # Version token for optimistic concurrency — present even when the file
     # doesn't exist yet ("0"), so a first save can still be conflict-checked.

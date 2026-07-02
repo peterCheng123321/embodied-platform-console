@@ -1,4 +1,5 @@
 const API = {
+  state: '/api/embodied-platform/state',
   datasets: '/api/embodied-platform/datasets',
   episodes: '/api/embodied-platform/episodes',
   imports: '/api/embodied-platform/imports',
@@ -132,6 +133,10 @@ const ANNOTATION_ACTION_GATES = {
   'rework-annotation': { from: ['review'], to: 'rework' },
   'resubmit-annotation': { from: ['rework'], to: 'review' },
 };
+
+// Learning-queue priority order (highest first). Keys match the enqueue-learning
+// select values; unknown priorities sort last so the queue still renders.
+const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
 
 const LABELS = {
   queued: '排队中',
@@ -706,6 +711,22 @@ async function loadDemoState(preferSaved = true) {
 
 async function loadLiveState() {
   state.ready = false;
+  try {
+    const liveData = await apiGet(API.state);
+    state.data = normaliseState(liveData);
+    state.ready = true;
+    state.degraded = false;
+    state.liveFailures = [];
+    state.demoSavedAt = null;
+    setStatus(true, currentPrincipal().signature ? 'API 已连接' : 'API 已连接（只读）');
+    renderAll();
+    return;
+  } catch {
+    // Older or degraded backends may not expose the batched state endpoint.
+    // Fall back to the per-endpoint fan-out so one missing snapshot route does
+    // not force the whole app into offline demo mode.
+  }
+
   const results = await Promise.allSettled(LIVE_ENDPOINTS.map((endpoint) => apiGet(endpoint.url)));
   const successCount = results.filter((result) => result.status === 'fulfilled').length;
   if (successCount === 0) throw new Error('API 不可用，已切换到离线演示数据');
@@ -1382,7 +1403,10 @@ function renderAll() {
   ]));
   renderQueueList('simulation-list', recordsFor('simulation'), { kind: 'simulation', label: '仿真任务' });
   renderQueueList('deployment-list', recordsFor('deployment'), { kind: 'deployment', label: '部署任务' });
-  renderQueueList('learning-list', recordsFor('learning'), { kind: 'learning', label: '学习队列' });
+  // Order the learning queue by priority (urgent first). Sort a copy: recordsFor
+  // returns a fresh array today, but the spread keeps this in-place sort safe
+  // regardless of that. Stable sort preserves backend order within a priority.
+  renderQueueList('learning-list', [...recordsFor('learning')].sort((a, b) => (PRIORITY_RANK[a.priority] ?? 99) - (PRIORITY_RANK[b.priority] ?? 99)), { kind: 'learning', label: '学习队列' });
   renderMonitoring(monitoring);
   table('audit-list', ['动作', '资源', '操作者', '详情'], data.audit_events.slice(-8).reverse().map((item) => [
     item.action,
@@ -1728,10 +1752,11 @@ async function runAction(action) {
           task_type: 'trajectory_segment',
           assignee: textInput('annotation-assignee', '负责人'),
           status: value('annotation-status'),
-          labels: [
-            { start_frame: 0, end_frame: 64, skill_id: 'approach' },
-            { start_frame: 65, end_frame: 140, skill_id: 'grasp' },
-          ],
+          // No fabricated segments: a new task starts unlabeled. Real frame-range
+          // labels arrive from the temporal labeler via /api/embodied/segments ->
+          // sync_labeler_segments_to_platform(). Keep the key present (empty list)
+          // because the offline branch below reads payload.labels.length.
+          labels: [],
         };
         assertOfflineReference(liveWrite, () => requireEpisodeInDataset(datasetId, episodeId));
         if (liveWrite) {
@@ -1919,7 +1944,19 @@ async function runAction(action) {
         break;
       }
       case 'activate-model': {
-        const payload = { name: textInput('model-name', '模型名称'), version: textInput('model-version', '模型版本', 80), artifact_uri: textInput('model-uri', '产物 URI', 500), metrics: { success: 0.82 } };
+        // The success metric is operator-supplied, never fabricated: an empty
+        // field sends no metric (ModelVersionCreate.metrics defaults to {}), so
+        // we never persist an invented score to the backend on activation.
+        const successRaw = value('model-success').trim();
+        let metrics = {};
+        if (successRaw !== '') {
+          const success = Number(successRaw);
+          if (!Number.isFinite(success) || success < 0 || success > 1) {
+            throw new FieldValidationError('model-success', '成功率必须是 0 到 1 之间的数值');
+          }
+          metrics = { success };
+        }
+        const payload = { name: textInput('model-name', '模型名称'), version: textInput('model-version', '模型版本', 80), artifact_uri: textInput('model-uri', '产物 URI', 500), metrics };
         if (liveWrite) {
           try {
             const created = await apiWrite(API.models, payload);

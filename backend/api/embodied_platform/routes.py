@@ -1,20 +1,32 @@
 """FastAPI routes for the embodied-only platform MVP."""
 from __future__ import annotations
 
-from collections.abc import Callable
 import hmac
 import logging
-import math
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
-from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ValidationError
 
+from .auth import (
+    WRITE_ROLES,
+    annotation_actor,
+    data_actor,
+    deployment_actor,
+    ml_actor,
+    require_write_actor,
+    sign_principal,
+    system_actor,
+)
 from .ingest import IngestError, IngestResult, parse_lerobot_root
+from .lifecycle import (
+    ANNOTATION_TRANSITIONS,
+    COLLECTION_RUN_MANUAL_TERMINAL,
+    COLLECTION_RUN_TRANSITIONS,
+    SUPPORTED_IMPORT_FORMATS,
+    transition_job,
+)
 from .qc import DatasetNotFound, dataset_qc
 from .repository import JsonRepository, get_repository
 from .schema import (
@@ -61,150 +73,24 @@ from .schema import (
     new_id,
     now_iso,
 )
+from .validation import register_validation_handlers as _register_validation_handlers
 
 
 router = APIRouter(prefix="/api/embodied-platform", tags=["embodied-platform"])
 
-WRITE_ROLES = {
-    "admin",
-    "data_manager",
-    "annotator",
-    "reviewer",
-    "ml_engineer",
-    "deployment_operator",
-    # Compatibility with the initial scaffold; production UI uses the specific roles above.
-    "operator",
-}
+
+def register_validation_handlers(app: Any) -> None:
+    """Compatibility shim; new code should import from embodied_platform.validation."""
+    _register_validation_handlers(app)
+
 
 logger = logging.getLogger(__name__)
-
-JOB_TRANSITIONS = {
-    "queued": {"running", "failed", "cancelled"},
-    "running": {"succeeded", "failed", "cancelled"},
-    "failed": {"queued"},
-    "cancelled": {"queued"},
-    "succeeded": set(),
-}
-
-# Collection-run termination table. The non-terminal statuses are DERIVED from
-# attempt progress (_progress_for_run); the only operator-settable statuses are
-# the manual terminals 'completed'/'failed', valid from any non-terminal state.
-# Unlike the job machine there is no same-status no-op: every terminal state
-# (derived 'passed' included) rejects further transitions with 409.
-COLLECTION_RUN_TRANSITIONS = {
-    "collecting": {"completed", "failed"},
-    "ready_for_review": {"completed", "failed"},
-    "blocked": {"completed", "failed"},
-    "passed": set(),
-    "completed": set(),
-    "failed": set(),
-}
-
-# Manual terminal run statuses. Attempt/review writes recompute the run status
-# from progress, which would silently resurrect a terminated run — so those
-# writes are rejected (409) while the run carries one of these.
-COLLECTION_RUN_MANUAL_TERMINAL = {"completed", "failed"}
-
-# Annotation review machine: open -> review -> accepted | rework -> review.
-# 'accepted' is terminal; there is no transition back to 'open' and no
-# same-status no-op — anything outside the table is a 409.
-ANNOTATION_TRANSITIONS = {
-    "open": {"review"},
-    "review": {"accepted", "rework"},
-    "rework": {"review"},
-    "accepted": set(),
-}
-
-# Import formats the ingest pipeline can actually parse. The ImportJobCreate
-# schema's `format` Literal advertises more values, but only LeRobot has a real
-# parser (parse_lerobot_root); any other format would otherwise be silently
-# parsed AS LeRobot. The route fails the import job for an unsupported format
-# instead of misparsing it.
-SUPPORTED_IMPORT_FORMATS = {"lerobot"}
-
 
 def _repo():
     # Backend selected by env (XINGJU_EMBODIED_PLATFORM_DSN set -> Postgres,
     # unset -> JSON file). PgRepository keeps JsonRepository's read()/mutate()
     # surface, so the JsonRepository-typed parameters below hold for either.
     return get_repository()
-
-
-def require_write_actor(
-    x_embodied_role: str = Header(default="viewer"),
-    x_embodied_actor: str = Header(default="anonymous"),
-    x_embodied_signature: str = Header(default="", alias="X-Embodied-Signature"),
-) -> dict[str, str]:
-    # Authenticate before authorize: verify the signature (authn) FIRST so an
-    # unauthenticated caller cannot learn the allowed-role set from the authz
-    # error message.
-    _verify_principal_signature(x_embodied_actor, x_embodied_role, x_embodied_signature)
-    if x_embodied_role not in WRITE_ROLES:
-        raise HTTPException(status_code=403, detail="write access requires an embodied platform write role")
-    return {"role": x_embodied_role, "actor": x_embodied_actor}
-
-
-def require_roles(*allowed_roles: str) -> Callable[[str, str], dict[str, str]]:
-    allowed = set(allowed_roles)
-
-    def _dependency(
-        x_embodied_role: str = Header(default="viewer"),
-        x_embodied_actor: str = Header(default="anonymous"),
-        x_embodied_signature: str = Header(default="", alias="X-Embodied-Signature"),
-    ) -> dict[str, str]:
-        # Authenticate before authorize: verify the signature (authn) FIRST so an
-        # unauthenticated caller cannot enumerate the allowed-role set from the
-        # authz error message.
-        _verify_principal_signature(x_embodied_actor, x_embodied_role, x_embodied_signature)
-        if x_embodied_role not in allowed:
-            raise HTTPException(status_code=403, detail=f"requires one of: {', '.join(sorted(allowed))}")
-        return {"role": x_embodied_role, "actor": x_embodied_actor}
-
-    return _dependency
-
-
-data_actor = require_roles("admin", "data_manager", "operator")
-annotation_actor = require_roles("admin", "annotator", "reviewer", "operator")
-ml_actor = require_roles("admin", "ml_engineer", "operator")
-deployment_actor = require_roles("admin", "deployment_operator", "operator")
-system_actor = require_roles("admin")
-
-
-def _auth_secret() -> str:
-    secret = os.environ.get("XINGJU_EMBODIED_PLATFORM_AUTH_SECRET")
-    if not secret:
-        raise RuntimeError("XINGJU_EMBODIED_PLATFORM_AUTH_SECRET is required for embodied write auth")
-    return secret
-
-
-def _canonical_principal_message(actor: str, role: str) -> bytes:
-    """Injective encoding of (actor, role) for signing.
-
-    A bare ``f"{actor}:{role}"`` join collides (sign('a','b:c') == sign('a:b','c'))
-    because a ':' in either field is indistinguishable from the separator.
-    Length-prefixing each field makes the (actor, role) -> message mapping
-    unambiguous so distinct principals never share a signed message.
-    """
-    actor_bytes = actor.encode()
-    role_bytes = role.encode()
-    return b"%d:%b:%d:%b" % (len(actor_bytes), actor_bytes, len(role_bytes), role_bytes)
-
-
-def sign_principal(actor: str, role: str) -> str:
-    return hmac.digest(_auth_secret().encode(), _canonical_principal_message(actor, role), "sha256").hex()
-
-
-def _verify_principal_signature(actor: str, role: str, signature: str) -> None:
-    try:
-        expected = sign_principal(actor, role)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    # Compare on bytes: hmac.compare_digest rejects non-ASCII str operands with a
-    # TypeError, which a non-ASCII signature header would otherwise turn into a
-    # 500. Encoding both operands makes such a header a clean 403 (it is simply an
-    # invalid signature).
-    if not signature or not hmac.compare_digest(signature.encode(), expected.encode()):
-        raise HTTPException(status_code=403, detail="invalid embodied platform principal signature")
 
 
 @router.post("/session", response_model=SessionResponse)
@@ -260,8 +146,8 @@ def _collection(repo: JsonRepository, name: str) -> list[dict[str, Any]]:
     return repo.read()[name]
 
 
-def _valid_rows(repo: JsonRepository, name: str, model: type[BaseModel]) -> list[BaseModel]:
-    """Read a collection and return only rows that validate against ``model``.
+def _valid_state_rows(state: dict[str, Any], name: str, model: type[BaseModel]) -> list[BaseModel]:
+    """Return only rows from a loaded state that validate against ``model``.
 
     A persisted row missing required fields (out-of-band corruption) would make
     FastAPI's ``response_model`` serialization raise a 500 for the whole list,
@@ -269,12 +155,16 @@ def _valid_rows(repo: JsonRepository, name: str, model: type[BaseModel]) -> list
     ones keeps list reads a clean 200 with the good rows. The malformed rows are
     left ON DISK (never deleted) so an operator can repair them out of band."""
     rows: list[BaseModel] = []
-    for row in repo.read()[name]:
+    for row in state[name]:
         try:
             rows.append(model.model_validate(row))
         except ValidationError:
             continue
     return rows
+
+
+def _valid_rows(repo: JsonRepository, name: str, model: type[BaseModel]) -> list[BaseModel]:
+    return _valid_state_rows(repo.read(), name, model)
 
 
 def _first_person_profile() -> CollectionProfile:
@@ -364,7 +254,10 @@ def _profile_by_id(state: dict[str, Any], profile_id: str) -> CollectionProfile:
 
 
 def _attempts_for_run(state: dict[str, Any], run_id: str) -> list[dict[str, Any]]:
-    return [attempt for attempt in state["collection_attempts"] if attempt["run_id"] == run_id]
+    # attempt.get(...) (not attempt[...]): an out-of-band-corrupted persisted row
+    # missing run_id/task_id/status must not raise a KeyError 500 in the progress
+    # projection — mirror the _find() id-less-row convention and fail closed below.
+    return [attempt for attempt in state["collection_attempts"] if attempt.get("run_id") == run_id]
 
 
 def _uploaded_status(status: str) -> bool:
@@ -376,10 +269,13 @@ def _progress_for_run(state: dict[str, Any], run: dict[str, Any]) -> CollectionR
     attempts = _attempts_for_run(state, run["id"])
     task_progress: list[CollectionTaskProgress] = []
     for task in profile.tasks:
-        task_attempts = [attempt for attempt in attempts if attempt["task_id"] == task.task_id]
+        task_attempts = [attempt for attempt in attempts if attempt.get("task_id") == task.task_id]
         attempt_count = len(task_attempts)
-        uploaded_count = sum(1 for attempt in task_attempts if _uploaded_status(attempt["status"]))
-        accepted_count = sum(1 for attempt in task_attempts if attempt["status"] == "accepted")
+        # A status-less corrupted row fails closed: counted by neither
+        # _uploaded_status nor the accepted check, so it can contribute to
+        # attempt_count but never inflate uploaded/accepted or silently advance a run.
+        uploaded_count = sum(1 for attempt in task_attempts if _uploaded_status(attempt.get("status", "")))
+        accepted_count = sum(1 for attempt in task_attempts if attempt.get("status") == "accepted")
         remaining_attempts = max(0, task.max_attempts - attempt_count)
         if accepted_count >= task.required_uploads:
             task_status = "passed"
@@ -452,16 +348,6 @@ def _require_episode_in_dataset(state: dict[str, Any], dataset_id: str, episode_
     allowed_dataset_refs = {dataset["id"], dataset["name"], dataset_id}
     if episode["dataset_id"] not in allowed_dataset_refs:
         raise HTTPException(status_code=422, detail=f"episode {episode_id} is not part of dataset {dataset_id}")
-
-
-def _transition_job(job: dict[str, Any], status: str, message: str | None) -> None:
-    current = job.get("status", "queued")
-    if current == status:
-        job.update(message=message, updated_at=now_iso())
-        return
-    if status not in JOB_TRANSITIONS.get(current, set()):
-        raise HTTPException(status_code=409, detail=f"cannot transition job from {current} to {status}")
-    job.update(status=status, message=message, updated_at=now_iso())
 
 
 JOB_QUEUE_DEFINITIONS: dict[str, dict[str, Any]] = {
@@ -688,6 +574,53 @@ def _queue_item_for_job(kind: str, row: dict[str, Any]) -> QueueItem:
     if not projected:
         raise HTTPException(status_code=500, detail=f"failed to project queue item: {kind}/{row.get('id')}")
     return projected[0]
+
+
+def _monitoring_overview_from_state(state: dict[str, Any]) -> MonitoringOverview:
+    jobs = (
+        state["imports"]
+        + state["training_jobs"]
+        + state["simulation_jobs"]
+        + state["deployments"]
+        + state["learning_queue"]
+    )
+    active_model = next((model["id"] for model in state["models"] if model.get("active")), None)
+    sim_jobs = state["simulation_jobs"]
+    sim_success = [job for job in sim_jobs if job.get("status") == "succeeded"]
+    return MonitoringOverview(
+        dataset_count=len(state["datasets"]),
+        episode_count=len(state["episodes"]),
+        queued_jobs=sum(1 for job in jobs if job.get("status") == "queued"),
+        running_jobs=sum(1 for job in jobs if job.get("status") == "running"),
+        active_model_id=active_model,
+        active_deployments=sum(1 for dep in state["deployments"] if dep.get("status") in {"queued", "running"}),
+        open_learning_items=sum(1 for item in state["learning_queue"] if item.get("status") in {"queued", "running"}),
+        recent_audit_events=len(state["audit_events"][-20:]),
+        sim_success_rate=(len(sim_success) / len(sim_jobs)) if sim_jobs else 0.0,
+    )
+
+
+@router.get("/state")
+def get_state_snapshot(repo: JsonRepository = Depends(_repo)) -> dict[str, Any]:
+    state = repo.read()
+    return {
+        "datasets": _valid_state_rows(state, "datasets", Dataset),
+        "episodes": _valid_state_rows(state, "episodes", Episode),
+        "imports": _valid_state_rows(state, "imports", ImportJob),
+        "annotation_tasks": _valid_state_rows(state, "annotation_tasks", AnnotationTask),
+        "collection_profiles": _profiles(state),
+        "collection_runs": state["collection_runs"],
+        "collection_attempts": state["collection_attempts"],
+        "training_jobs": _valid_state_rows(state, "training_jobs", TrainingJob),
+        "models": _valid_state_rows(state, "models", ModelVersion),
+        "simulation_jobs": _valid_state_rows(state, "simulation_jobs", SimulationJob),
+        "deployments": _valid_state_rows(state, "deployments", Deployment),
+        "learning_queue": _valid_state_rows(state, "learning_queue", LearningQueueItem),
+        "queue": _project_queue(state),
+        "monitoring": _monitoring_overview_from_state(state),
+        "audit_events": _valid_state_rows(state, "audit_events", AuditEvent),
+        "system_settings": _coerce_system_settings(state["system_settings"]),
+    }
 
 
 @router.get("/datasets", response_model=list[Dataset])
@@ -966,9 +899,9 @@ def create_import(
             job_row.update(message="queued for external ingest via status updates", updated_at=now_iso())
             return ImportJob.model_validate(job_row)
 
-        _transition_job(job_row, "running", "ingest started")
+        transition_job(job_row, "running", "ingest started")
         if failure is not None:
-            _transition_job(job_row, "failed", failure)
+            transition_job(job_row, "failed", failure)
             _append_audit(state, action="import.failed", resource=job.id, detail=failure, actor=actor)
             return ImportJob.model_validate(job_row)
 
@@ -979,7 +912,7 @@ def create_import(
         # from req.dataset_name, which was never created — so the message/audit
         # must reflect the reused dataset, not the requested-but-unused name.
         message = f"ingested {created} episodes into {dataset['name']}"
-        _transition_job(job_row, "succeeded", message)
+        transition_job(job_row, "succeeded", message)
         _append_audit(state, action="import.succeeded", resource=job.id, detail=message, actor=actor)
         return ImportJob.model_validate(job_row)
 
@@ -1040,21 +973,21 @@ def update_import_status(
     def _mutate(state: dict[str, Any]) -> ImportJob:
         job = _find(state, "imports", job_id)
         if is_local_retry and job.get("status") == "failed":
-            _transition_job(job, "queued", req.message)
+            transition_job(job, "queued", req.message)
             _append_audit(state, action="import.status", resource=job_id, detail=req.status, actor=actor)
-            _transition_job(job, "running", "ingest retry started")
+            transition_job(job, "running", "ingest retry started")
             if retry_failure is not None or retry_ingest is None:
                 failure = retry_failure or "ingest retry produced no result"
-                _transition_job(job, "failed", failure)
+                transition_job(job, "failed", failure)
                 _append_audit(state, action="import.failed", resource=job_id, detail=failure, actor=actor)
                 return ImportJob.model_validate(job)
             dataset = _ensure_dataset(state, str(job.get("dataset_name", "")), retry_ingest)
             created = _materialize_episodes(state, dataset, retry_ingest)
             message = f"ingested {created} episodes into {dataset['name']}"
-            _transition_job(job, "succeeded", message)
+            transition_job(job, "succeeded", message)
             _append_audit(state, action="import.succeeded", resource=job_id, detail=message, actor=actor)
             return ImportJob.model_validate(job)
-        _transition_job(job, req.status, req.message)
+        transition_job(job, req.status, req.message)
         _append_audit(state, action="import.status", resource=job_id, detail=req.status, actor=actor)
         return ImportJob.model_validate(job)
 
@@ -1320,7 +1253,7 @@ def update_training_status(
 ) -> TrainingJob:
     def _mutate(state: dict[str, Any]) -> TrainingJob:
         job = _find(state, "training_jobs", job_id)
-        _transition_job(job, req.status, req.message)
+        transition_job(job, req.status, req.message)
         _append_audit(state, action="training.status", resource=job_id, detail=req.status, actor=actor)
         return TrainingJob.model_validate(job)
 
@@ -1400,7 +1333,7 @@ def update_simulation_status(
 ) -> SimulationJob:
     def _mutate(state: dict[str, Any]) -> SimulationJob:
         job = _find(state, "simulation_jobs", job_id)
-        _transition_job(job, req.status, req.message)
+        transition_job(job, req.status, req.message)
         _append_audit(state, action="simulation.status", resource=job_id, detail=req.status, actor=actor)
         return SimulationJob.model_validate(job)
 
@@ -1444,7 +1377,7 @@ def update_deployment_status(
 ) -> Deployment:
     def _mutate(state: dict[str, Any]) -> Deployment:
         deployment = _find(state, "deployments", deployment_id)
-        _transition_job(deployment, req.status, req.message)
+        transition_job(deployment, req.status, req.message)
         _append_audit(state, action="deployment.status", resource=deployment_id, detail=req.status, actor=actor)
         return Deployment.model_validate(deployment)
 
@@ -1482,7 +1415,7 @@ def update_learning_item_status(
 ) -> LearningQueueItem:
     def _mutate(state: dict[str, Any]) -> LearningQueueItem:
         item = _find(state, "learning_queue", item_id)
-        _transition_job(item, req.status, req.message)
+        transition_job(item, req.status, req.message)
         _append_audit(state, action="learning.status", resource=item_id, detail=req.status, actor=actor)
         return LearningQueueItem.model_validate(item)
 
@@ -1516,7 +1449,7 @@ def update_queue_item_status(
 
     def _mutate(state: dict[str, Any]) -> QueueItem:
         item = _find(state, definition["collection"], item_id)
-        _transition_job(item, req.status, req.message)
+        transition_job(item, req.status, req.message)
         _append_audit(state, action=definition["audit"], resource=item_id, detail=req.status, actor=actor)
         definition["model"].model_validate(item)
         return _queue_item_for_job(kind, item)
@@ -1526,28 +1459,7 @@ def update_queue_item_status(
 
 @router.get("/monitoring/overview", response_model=MonitoringOverview)
 def monitoring_overview(repo: JsonRepository = Depends(_repo)) -> MonitoringOverview:
-    state = repo.read()
-    jobs = (
-        state["imports"]
-        + state["training_jobs"]
-        + state["simulation_jobs"]
-        + state["deployments"]
-        + state["learning_queue"]
-    )
-    active_model = next((model["id"] for model in state["models"] if model.get("active")), None)
-    sim_jobs = state["simulation_jobs"]
-    sim_success = [job for job in sim_jobs if job.get("status") == "succeeded"]
-    return MonitoringOverview(
-        dataset_count=len(state["datasets"]),
-        episode_count=len(state["episodes"]),
-        queued_jobs=sum(1 for job in jobs if job.get("status") == "queued"),
-        running_jobs=sum(1 for job in jobs if job.get("status") == "running"),
-        active_model_id=active_model,
-        active_deployments=sum(1 for dep in state["deployments"] if dep.get("status") in {"queued", "running"}),
-        open_learning_items=sum(1 for item in state["learning_queue"] if item.get("status") in {"queued", "running"}),
-        recent_audit_events=len(state["audit_events"][-20:]),
-        sim_success_rate=(len(sim_success) / len(sim_jobs)) if sim_jobs else 0.0,
-    )
+    return _monitoring_overview_from_state(repo.read())
 
 
 @router.get("/audit-events", response_model=list[AuditEvent])
@@ -1626,34 +1538,3 @@ def update_system_settings(
         return merged
 
     return repo.mutate(_mutate)
-
-
-def _scrub_non_finite(value: Any) -> Any:
-    """Recursively replace non-finite floats (NaN/Inf) with None.
-
-    A bounded float field that rejects NaN still echoes the offending ``input``
-    into the validation-error context; that nested NaN would crash
-    ``JSONResponse.render`` (json.dumps(..., allow_nan=False)) -> 500. Scrubbing
-    keeps the 422 error body spec-compliant JSON.
-    """
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-    if isinstance(value, dict):
-        return {key: _scrub_non_finite(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_scrub_non_finite(item) for item in value]
-    return value
-
-
-async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    detail = _scrub_non_finite(jsonable_encoder(exc.errors()))
-    return JSONResponse(status_code=422, content={"detail": detail})
-
-
-def register_validation_handlers(app: FastAPI) -> None:
-    """Register the NaN-safe RequestValidationError handler.
-
-    Exception handlers are app-level (not router-level), so this must be called
-    on the FastAPI app — both in production (api/main.py) and in tests.
-    """
-    app.add_exception_handler(RequestValidationError, _validation_exception_handler)

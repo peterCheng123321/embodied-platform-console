@@ -377,6 +377,21 @@ function updateTimeUI() {
     scrubFill.style.transform = `scaleX(${pct})`;
     if (!scrubBarWidthPx) scrubBarWidthPx = scrubBar.getBoundingClientRect().width;
     scrubHead.style.transform = `translateX(${pct * scrubBarWidthPx}px)`;
+    updateScrubAria();
+}
+
+// Keep the scrub bar's ARIA slider state in sync with the playhead so screen
+// readers announce the current frame on both playback and keyboard seeks.
+function updateScrubAria() {
+    const total = totalFrames();
+    const cur = frameOf(video.currentTime || 0);
+    scrubBar.setAttribute('aria-valuenow', String(cur));
+    if (isFinite(total) && total > 0) {
+        scrubBar.setAttribute('aria-valuemax', String(total));
+        scrubBar.setAttribute('aria-valuetext', `帧 ${cur} / ${total}`);
+    } else {
+        scrubBar.setAttribute('aria-valuetext', `帧 ${cur}`);
+    }
 }
 
 function stepFrame(delta) {
@@ -606,6 +621,27 @@ window.addEventListener('mousemove', (e) => {
     if (scrubDragging) seekFromScrub(e.clientX);
 });
 window.addEventListener('mouseup', () => { scrubDragging = false; });
+
+// Keyboard operability for the scrub bar (role="slider") — a keyboard-first tool
+// must not leave the transport mouse-only. Reuses stepFrame() so the pause /
+// JKL-reset behaviour and duration clamping match the ,/. transport keys; Home/
+// End are expressed as relative deltas so they route through the same seek path.
+scrubBar.addEventListener('keydown', (e) => {
+    const cur = frameOf(video.currentTime || 0);
+    let handled = true;
+    switch (e.key) {
+        case 'ArrowLeft':
+        case 'ArrowDown':  stepFrame(e.shiftKey ? -10 : -1); break;
+        case 'ArrowRight':
+        case 'ArrowUp':    stepFrame(e.shiftKey ?  10 :  1); break;
+        case 'PageDown':   stepFrame(-10); break;
+        case 'PageUp':     stepFrame(10); break;
+        case 'Home':       stepFrame(-cur); break;
+        case 'End':        stepFrame(totalFrames() - cur); break;
+        default:           handled = false;
+    }
+    if (handled) { e.preventDefault(); updateScrubAria(); }
+});
 
 document.addEventListener('keydown', (e) => {
     if (isEditableTarget(e)) return;
@@ -1620,6 +1656,25 @@ function getAnnotatorId() {
     }
 }
 
+// Signed platform principal headers, inherited from the console session
+// (issue #2). The console mints these on login and stores them in
+// sessionStorage; navigating to /labeler/ in the same tab carries them over.
+// The segment API now derives the annotator_id from this authenticated actor,
+// so without a session the backend rejects writes (403) and we save locally.
+function principalHeaders() {
+    try {
+        const signature = sessionStorage.getItem('embodied.signature');
+        if (!signature) return {};
+        return {
+            'X-Embodied-Actor': sessionStorage.getItem('embodied.actor') || '',
+            'X-Embodied-Role': sessionStorage.getItem('embodied.role') || '',
+            'X-Embodied-Signature': signature,
+        };
+    } catch (e) {
+        return {};  // sessionStorage blocked — treat as unauthenticated.
+    }
+}
+
 // Raw commit — always invoked through the commitSegment() wrapper below,
 // which pushes the undo snapshot first.
 function commitSegmentRaw(start, end, skillId) {
@@ -2247,8 +2302,11 @@ async function saveAll({ auto = false } = {}) {
         }
         const headers = {
             'Content-Type': 'application/json',
-            // Defense-in-depth: server requires header == body annotator_id.
+            // Identity now comes from the signed platform principal (issue #2),
+            // inherited from the console session. X-Annotator-Id is kept for
+            // backward compatibility but is ignored by the server.
             'X-Annotator-Id': annotator_id,
+            ...principalHeaders(),
         };
         // After a 409, the next manual save deliberately omits If-Match to
         // force-overwrite. Otherwise, send the last-known etag so the backend
@@ -2281,6 +2339,22 @@ async function saveAll({ auto = false } = {}) {
                 ' (Conflict: another session saved newer changes — click 保存 to overwrite, or reload.)',
                 'error'
             );
+            if (auto) dirtyBadge.innerHTML = DIRTY_BADGE_DEFAULT_HTML;
+            return;
+        }
+        if (r.status === 401 || r.status === 403) {
+            // Not authenticated for backend writes (issue #2): the segment API
+            // requires a signed platform principal. Keep the work locally (and
+            // pending-sync) and prompt the operator to log in via the console,
+            // rather than flipping into the generic error path.
+            try {
+                saveSegmentsLocal(segments, annotator_id);
+                markLocalPendingSync(annotator_id, segments.length);
+            } catch (storageErr) {
+                console.error('saveAll: local fallback after auth failure failed:', storageErr);
+            }
+            setStorageMode('local', '未登录 · 本地保存（在控制台登录后可同步后端）');
+            showToast('未登录后端：标注已保存到本地。请在控制台登录后再保存以同步。', 'error');
             if (auto) dirtyBadge.innerHTML = DIRTY_BADGE_DEFAULT_HTML;
             return;
         }
@@ -2352,8 +2426,11 @@ async function loadExisting() {
         // A hung GET must not park the badge on 检查后端同步 forever — the 10s
         // timeout aborts into the catch path's local-mode fallback.
         const r = await fetchWithTimeout(`${API_BASE}/api/embodied/segments?episode_id=${EPISODE_ID}&annotator_id=${annotator_id}`, {
-            // Defense-in-depth: server requires header == query annotator_id.
-            headers: { 'X-Annotator-Id': annotator_id },
+            // Identity comes from the signed platform principal inherited from
+            // the console session (issue #2); without it the read 403s and the
+            // catch below falls back to the local copy. X-Annotator-Id is kept
+            // for backward compatibility but ignored by the server.
+            headers: { 'X-Annotator-Id': annotator_id, ...principalHeaders() },
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         // Optimistic-concurrency token: remember the version we just read so

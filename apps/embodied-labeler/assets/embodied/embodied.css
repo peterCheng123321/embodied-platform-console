@@ -312,7 +312,7 @@
 }
 
 .embodied-storage-badge[data-storage-mode="local"] {
-    border-color: rgba(255, 90, 54, 0.30);
+    border-color: rgba(255, 178, 46, 0.30);
     background: var(--ds-accent-tint);
     color: #b43720;
 }
@@ -392,9 +392,9 @@
 #video {
     width: 100% !important;
     /* Base (chassis) height. OVERRIDDEN on the .console page: console.css
-       (.console #video, min(38vh,360px)) then labeler-glass.css
+       (.console #video, min(38vh,360px)) then viewfinder.css §6d
        (.console #video, min(27vh,300px)) both raise specificity to 0,1,1 and
-       load after this file — labeler-glass.css wins (see note there). This
+       load after this file — viewfinder.css wins (see note there). This
        56vh value only applies if #video ever renders outside .console. */
     height: min(56vh, 32rem) !important;
     border-radius: 0.625rem;
@@ -608,15 +608,15 @@
 
 @keyframes timeline-focus-pulse {
     0% {
-        outline: 2px solid rgba(255, 90, 54, 0.55);
+        outline: 2px solid rgba(255, 178, 46, 0.55);
         outline-offset: 0;
     }
     75% {
-        outline: 2px solid rgba(255, 90, 54, 0.10);
+        outline: 2px solid rgba(255, 178, 46, 0.10);
         outline-offset: 7px;
     }
     100% {
-        outline: 2px solid rgba(255, 90, 54, 0);
+        outline: 2px solid rgba(255, 178, 46, 0);
         outline-offset: 7px;
     }
 }
@@ -755,7 +755,7 @@
 
 #segment-status {
     margin-top: 0.75rem !important;
-    border: 1px solid rgba(255, 90, 54, 0.28) !important;
+    border: 1px solid rgba(255, 178, 46, 0.28) !important;
     background: var(--ds-accent-tint) !important;
     color: var(--ds-ink) !important;
 }
@@ -990,7 +990,7 @@
 @media (max-width: 640px) {
     /* Narrow-viewport base override. Bare #video (0,1,0) like the rule above, so
        on the .console page it is ALSO outranked by the .console #video rules
-       (0,1,1) in console.css / labeler-glass.css regardless of viewport — those
+       (0,1,1) in console.css / viewfinder.css §6d regardless of viewport — those
        use vh units that already shrink on small screens. Applies only off .console. */
     #video {
         height: min(44vh, 20rem) !important;
@@ -1039,7 +1039,7 @@
     animation: pill-flash 0.24s var(--ease);
 }
 @keyframes pill-flash {
-    0% { background-color: rgba(255, 90, 54, 0.5); transform: scale(1.06); }
+    0% { background-color: rgba(255, 178, 46, 0.5); transform: scale(1.06); }
     100% { background-color: rgb(39, 39, 42); transform: scale(1); }
 }
 

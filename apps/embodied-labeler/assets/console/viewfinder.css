@@ -1,0 +1,276 @@
+/* ============================================================================
+   星聚 · Viewfinder skin — additive, replaces the Liquid Glass layer.
+   Design language: "viewfinder / telemetry instrument" (Claude Design mock
+   "Embodied Labeler - Viewfinder.dc.html").
+     · duotone phosphor palette — teal-black ground
+     · AMBER = record / primary  (mark, save, playhead, dirty)
+     · CYAN  = selection / focus  (armed skill, selected clip, rings, toggles)
+     · telemetry chrome — `//` section headers, [ LABELER ] wordmark, CRT scanline
+     · cyan viewfinder corner-brackets framing the video
+   Mechanism: re-binds the --ds-* token system the chassis already consumes, then
+   overrides the handful of baked Tailwind utilities the markup/JS hardcode.
+   Structure-only; all chassis behaviour (embodied.js) is untouched.
+   Loads LAST so it wins on import order; scoped to .console so it can't leak.
+   NOTE: fonts kept as the locally-vendored IBM Plex (mono + Sans SC). The mock
+   specifies JetBrains Mono + Noto Sans SC; vendoring those is a follow-up so we
+   don't reintroduce a Google Fonts CDN this codebase deliberately removed.
+   ========================================================================== */
+
+/* ---- 1 · phosphor token re-bind (over console.css dark values) ---------- */
+.console {
+    --ds-canvas: #0a0f0f;
+    --ds-surface: #111817;
+    --ds-surface-sunk: #070b0b;
+    --vf-surface-2: #18211f;   /* raised control face */
+    --vf-raise: #1f2a28;       /* hover face */
+    --edge: #202b29;
+    --edge-strong: #2e3b39;
+    --ds-ink: #e8f1ef;
+    --ds-ink-soft: #9fb2af;
+    --ds-ink-faint: #7a8f89;
+    /* brand demoted to neutral ink; selection grammar carried by --vf-cool */
+    --ds-brand: #9fb2af;
+    --ds-brand-strong: #cfdedb;
+    --ds-brand-tint: rgba(63, 184, 212, 0.10);   /* cyan hover wash */
+    --ds-row-selected: rgba(63, 184, 212, 0.13);
+    --ds-ink-on-brand: #0a0c0e;
+    /* AMBER — record / primary (was coral #ff5a36) */
+    --ds-accent: #ffb22e;
+    --ds-accent-tint: rgba(255, 178, 46, 0.13);
+    /* CYAN — selection / focus */
+    --vf-cool: #3fb8d4;
+    --vf-cool-soft: rgba(63, 184, 212, 0.13);
+    /* state palette — data, distinct from skill hues and from chrome */
+    --ds-state-pass: #4fc08d;
+    --ds-state-risk: #e58a3a;
+    --ds-state-assign: #6f9fd0;
+    --vf-fail: #e3564c;             /* fills / rings / borders (on solid or light grounds) */
+    --vf-fail-text: #ec7b72;        /* red TEXT — lighter so it clears AA on the dark red/15 tint (5.1:1) */
+}
+
+/* ---- 1b · typography — vendored instrument fonts (viewfinder-fonts.css) ---
+   UI/CJK → Noto Sans SC; mono chrome (readouts, chips, telemetry) → JetBrains
+   Mono. IBM Plex kept as the immediate fallback; system fonts behind that. */
+.console { font-family: "Noto Sans SC", "IBM Plex Sans SC", system-ui, sans-serif; }
+.console .font-mono,
+.console code, .console kbd, .console pre, .console samp {
+    font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* ---- 2 · region surfaces (the .glass layer is gone — own them here) ----- */
+.console-topbar,
+.console-tree,
+.console-inspector,
+.console-conductor { background: var(--ds-surface); }
+.console-viewport  { background: var(--ds-canvas); }
+.console-bottombar { background: var(--ds-surface-sunk); }
+
+/* ---- 3 · CRT scanline — instrument atmosphere over the whole surface ---- */
+.console::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 30;   /* over content, under help (z-40) / toasts (z-50) */
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(120, 230, 225, 0.014) 0 1px, transparent 1px 3px);
+}
+@media (prefers-reduced-motion: reduce) { .console::after { background: none; } }
+
+/* ---- 4 · Tailwind utility overrides (.console scope, win on specificity) - */
+/* surfaces: zinc → teal-black */
+.console .bg-zinc-800 { background-color: var(--vf-surface-2); }
+.console .bg-zinc-800\/70 { background-color: var(--vf-surface-2); }
+.console .bg-zinc-700 { background-color: var(--vf-raise); }
+.console .bg-zinc-900 { background-color: var(--ds-surface); }
+.console .bg-zinc-950 { background-color: var(--ds-surface-sunk); }
+.console .hover\:bg-zinc-800:hover { background-color: var(--vf-surface-2); }
+.console .hover\:bg-zinc-700:hover { background-color: var(--vf-raise); }
+.console .focus\:bg-zinc-800:focus { background-color: var(--vf-surface-2); }
+.console .bg-light { background-color: var(--ds-ink); }
+/* hairlines */
+.console .ring-zinc-700 { --tw-ring-color: var(--edge-strong); }
+.console .border-zinc-700 { border-color: var(--edge-strong); }
+.console .border-zinc-800 { border-color: var(--edge); }
+.console .ring-offset-zinc-900 { --tw-ring-offset-color: var(--ds-surface); }
+/* ink */
+.console .text-zinc-200 { color: var(--ds-ink); }
+.console .text-zinc-300 { color: var(--ds-ink-soft); }
+.console .text-zinc-400 { color: var(--ds-ink-soft); }
+.console .text-zinc-500 { color: var(--ds-ink-faint); }
+.console .text-zinc-600 { color: var(--ds-ink-faint); }
+.console .text-zinc-700 { color: var(--edge-strong); }
+/* accent (coral → amber): fills / text / borders / shadows */
+.console .bg-accent { background-color: var(--ds-accent); }
+.console .hover\:bg-accent\/90:hover { background-color: var(--ds-accent); }
+.console .active\:bg-accent\/80:active { background-color: var(--ds-accent); }
+.console .text-accent { color: var(--ds-accent); }
+.console .border-accent { border-color: var(--ds-accent); }
+.console .focus\:border-accent:focus { border-color: var(--ds-accent); }
+.console [class*="shadow-accent"] { --tw-shadow-color: rgba(255, 178, 46, 0.3); }
+/* accent opacity-variants: the OLD coral #ff5a36 still lives in the compiled
+   Tailwind (bg-accent/10,/15, ring-accent/30) — remap onto amber so record-state
+   surfaces (#segment-status open-banner, active #btn-loop) match --ds-accent. */
+.console .bg-accent\/10 { background-color: rgba(255, 178, 46, 0.10); }
+.console .bg-accent\/15 { background-color: rgba(255, 178, 46, 0.15); }
+.console .ring-accent\/30 { --tw-ring-color: rgba(255, 178, 46, 0.3); }
+/* amber state utilities → align onto the amber accent token */
+.console .text-amber-300 { color: var(--ds-accent); }
+.console .bg-amber-400 { background-color: var(--ds-accent); }
+.console .bg-amber-500\/10,
+.console .bg-amber-500\/15 { background-color: var(--ds-accent-tint); }
+.console .ring-amber-500\/40 { --tw-ring-color: rgba(255, 178, 46, 0.4); }
+/* pass / fail state colors */
+.console .text-emerald-500,
+.console .text-emerald-300 { color: var(--ds-state-pass); }
+.console .bg-emerald-600 { background-color: #0b6b4f; }   /* solid-fill toast: white text needs AA (white on #0b6b4f = 6.50:1; the light --ds-state-pass is text/tint only) */
+.console .bg-emerald-500\/15 { background-color: rgba(79, 192, 141, 0.15); }
+.console .ring-emerald-500\/40 { --tw-ring-color: rgba(79, 192, 141, 0.4); }
+.console .text-red-500,
+.console .text-red-400,
+.console .text-red-300 { color: var(--vf-fail-text); }
+.console .hover\:text-red-400:hover { color: var(--vf-fail-text); }
+.console .bg-red-600 { background-color: #b23a31; }   /* solid-fill toast: white text needs AA (white on #b23a31 = 5.93:1; the light --vf-fail is text/tint only) */
+.console .bg-red-500\/15 { background-color: rgba(227, 86, 76, 0.15); }
+.console .ring-red-500\/40 { --tw-ring-color: rgba(227, 86, 76, 0.4); }
+
+/* ---- 5 · focus & selection → cyan ------------------------------------- */
+/* console.css §4 paints focus outlines in --ds-accent; Viewfinder focus = cyan */
+.console button:focus-visible:not(.skill-pill),
+.console select:focus-visible,
+.console input:focus-visible,
+.console a:focus-visible { outline: 2px solid var(--vf-cool); outline-offset: 2px; }
+.console .embodied-frame-stepper button:focus-visible { outline-offset: -2px; }
+/* every Tailwind `ring-accent` (focus rings AND the selected-row ring) → cyan */
+.console .ring-accent,
+.console .focus-visible\:ring-accent:focus-visible { --tw-ring-color: var(--vf-cool); }
+.console .ring-light,
+.console .focus-visible\:ring-light:focus-visible { --tw-ring-color: var(--vf-cool); }
+/* selected segment row (JS toggles .ring-1 + .ring-accent) gets a cyan wash too */
+.console #segment-list > [data-seg-id].ring-accent { background: var(--vf-cool-soft); }
+
+/* ---- 6 · telemetry chrome --------------------------------------------- */
+/* 6a · [ LABELER ] wordmark — 星聚 · amber dot · mono bracket */
+.console .vf-brand { display: inline-flex; align-items: baseline; gap: 8px; text-transform: none; letter-spacing: normal; }
+.console .vf-brand-zh { font-family: "Noto Sans SC", "IBM Plex Sans SC", sans-serif; font-weight: 700; font-size: 14px; color: var(--ds-ink); }
+.console .vf-brand-dot { align-self: center; width: 5px; height: 5px; border-radius: 50%; background: var(--ds-accent); }
+.console .vf-brand-mark { font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ds-ink-faint); }
+
+/* 6b · `//` mono-amber prefix on the three section headers */
+.console .embodied-palette-heading > div > span:first-child::before,
+.console #segments-section h2::before,
+.console .embodied-timeline-card .embodied-panel-heading > span:first-child::before {
+    content: "//";
+    margin-right: 7px;
+    font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 500;
+    color: var(--ds-accent);
+}
+
+/* 6c · cyan viewfinder corner-brackets framing the video */
+.console .embodied-video-frame { position: relative; }
+.console .vf-corner { position: absolute; width: 15px; height: 15px; opacity: 0.65; pointer-events: none; z-index: 2; }
+.console .vf-corner-tl { top: 11px; left: 11px; border-top: 2px solid var(--vf-cool); border-left: 2px solid var(--vf-cool); }
+.console .vf-corner-tr { top: 11px; right: 11px; border-top: 2px solid var(--vf-cool); border-right: 2px solid var(--vf-cool); }
+.console .vf-corner-bl { bottom: 11px; left: 11px; border-bottom: 2px solid var(--vf-cool); border-left: 2px solid var(--vf-cool); }
+.console .vf-corner-br { bottom: 11px; right: 11px; border-bottom: 2px solid var(--vf-cool); border-right: 2px solid var(--vf-cool); }
+/* 6d · video height cap — ported from the retired labeler-glass.css so the video
+   band doesn't grow to console.css's 38vh/360px and scroll the transport controls
+   out of view. viewfinder loads last, so `.console #id`(1,1,0)!important wins. */
+.console #video { height: min(27vh, 300px) !important; }
+
+/* ---- 7 · component restyles ------------------------------------------- */
+/* 7a · armed skill pill — cyan-soft face + cyan left bar (selection grammar) */
+.console .skill-pill { position: relative; border: 1px solid var(--edge); background: var(--vf-surface-2); }
+/* embodied.css:1113 themes .skill-pill.active with !important, so the armed pill
+   needs !important too (else the intended cyan face/border never render — only
+   the inset cyan bar survived). Scoped to .active: the resting pill is left to
+   the chassis, so no per-skill inline styling is clobbered. */
+.console .skill-pill.active {
+    background: var(--vf-cool-soft) !important;
+    border-color: var(--vf-cool) !important;
+    box-shadow: inset 3px 0 0 var(--vf-cool);
+}
+
+/* 7b · timeline playhead → amber; user-lane selected rect → cyan stroke.
+   embodied.css themes #timeline-playhead with var(--ds-brand) !important, so
+   match it: `.console #id` (1,1,0) + !important wins over `#id` (1,0,0). */
+.console #timeline-playhead { background: var(--ds-accent) !important; box-shadow: none !important; }
+.console #timeline-lanes rect.selected { stroke: var(--vf-cool); stroke-width: 2; }
+
+/* 7g · id-themed buttons embodied.css paints with var(--ds-brand) !important.
+   Viewfinder: Save = amber primary; Mark-start = amber-outlined record affordance
+   (its skill-colored left border is still set inline by setActiveSkill). */
+.console #save-btn {
+    background: var(--ds-accent) !important;
+    border-color: var(--ds-accent) !important;
+    color: #1a0d07 !important;
+}
+.console #save-btn:hover { background: color-mix(in srgb, var(--ds-accent) 92%, #000) !important; }
+.console #btn-mark-start {
+    background: var(--vf-surface-2) !important;
+    border-color: var(--ds-accent) !important;
+    color: var(--ds-accent) !important;
+}
+/* 7i · other amber primaries need dark ink for legibility. embodied.css forces
+   #fff !important on the play icon and the mark-end label/icon (and its 'S' kbd
+   chip); Save already carries dark ink. White on amber #ffb22e = 1.80:1; dark
+   ink #1a0d07 = 10.6:1 (kbd chip on the amber composite = 11.52:1). */
+.console #btn-play { color: #1a0d07 !important; }
+.console #btn-mark-end,
+.console #btn-mark-end i { color: #1a0d07 !important; }
+.console #btn-mark-end kbd { color: #1a0d07; }
+
+/* 7j · timeline lane labels: only the editable "user" lane stays 800/ink; the
+   three read-only reference lanes drop to 600/ink-soft so User reads as primary
+   (embodied.css:223 sets every .timeline-track-label span to 800). */
+.console .timeline-track-row:not([data-timeline-track="user"]) .timeline-track-label span {
+    font-weight: 600;
+    color: var(--ds-ink-soft);
+}
+
+/* 7c · scrub bar — cyan playhead knob, amber fill stays via bg-accent */
+.console #scrub-head { border-color: var(--vf-cool); }   /* ring-accent already → cyan */
+/* scrub bar is a keyboard-operable slider (role=slider); give it a cyan focus
+   ring so keyboard users can see it has focus (7.07:1 on the bar face). */
+.console #scrub-bar:focus-visible { outline: 2px solid var(--vf-cool); outline-offset: 2px; }
+/* scrub-fill glow → amber (the markup's baked coral shadow class was dropped). */
+.console #scrub-fill { box-shadow: 0 0 8px rgba(255, 178, 46, 0.4); }
+
+/* 7d · timeline lane-toggle legend → pill toggles, cyan when active */
+.console .timeline-legend button {
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    padding: 4px 11px;
+    color: var(--ds-ink-faint);
+    background: transparent;
+}
+.console .timeline-legend button[aria-pressed="true"] {
+    border-color: var(--vf-cool);
+    background: var(--vf-cool-soft);
+    color: var(--ds-ink);
+}
+
+/* 7e · S·01 telemetry tags on segment rows (CSS counter — no JS needed) */
+.console #segment-list { counter-reset: vfseg; }
+.console #segment-list > [data-seg-id] { position: relative; }
+.console #segment-list > [data-seg-id]::before {
+    counter-increment: vfseg;
+    content: "S·" counter(vfseg, decimal-leading-zero);
+    font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    color: var(--ds-accent);
+    flex-shrink: 0;
+    align-self: center;
+}
+
+/* 7f · dirty badge / save bar already amber via the accent token — leave */
+
+/* 7h · empty-state primary CTA — a "start recording" affordance → amber.
+   embodied.css themes it var(--ds-brand) (neutral); class-level override wins. */
+.console .embodied-empty-action {
+    background: var(--ds-accent);
+    border-color: var(--ds-accent);
+    color: #1a0d07;
+}
+.console .embodied-empty-action:hover { background: color-mix(in srgb, var(--ds-accent) 92%, #000); }

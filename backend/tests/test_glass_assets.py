@@ -51,7 +51,9 @@ def test_preview_page_served_and_wired():
     assert r.status_code == 200
     body = r.text
     # Links the three shared assets in the right order (tokens before glass).
-    t = body.index("tokens.css"); g = body.index("glass.css"); j = body.index("refract.js")
+    t = body.index("tokens.css")
+    g = body.index("glass.css")
+    j = body.index("refract.js")
     assert t < g, "tokens.css must be linked before glass.css"
     assert "refract.js" in body and j > 0
     # Renders at least the core vocabulary so it is a real reference.

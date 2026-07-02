@@ -42,4 +42,28 @@ out = re.sub(r"url\((https://fonts\.gstatic\.com/[^)]+)\)", fetch, css)
 print(f"plex.css: {len(re.findall(r'woff2/', out))} font files vendored")
 PY
 rm "$V/fonts/plex.orig.css"
+
+# 4. Viewfinder skin fonts — JetBrains Mono (telemetry mono chrome) + Noto Sans SC
+# (CJK/UI). This is the reskin's "instrument" type (mock: Viewfinder.dc.html).
+# Unlike Plex Sans SC (never in the Google catalog — see note above), Noto Sans SC
+# IS served, so this is a real CJK upgrade over the prior system-font fallback.
+# Same offline sha1-rewrite pipeline; woff2 shared with plex (dedup by sha1).
+VF_CSS_URL='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap'
+curl -fsSL -A "$UA" "$VF_CSS_URL" -o "$V/fonts/viewfinder-fonts.orig.css"
+python3 - "$V" <<'PY'
+import hashlib, pathlib, re, sys, urllib.request
+v = pathlib.Path(sys.argv[1]) / "fonts"
+css = (v / "viewfinder-fonts.orig.css").read_text()
+def fetch(m):
+    url = m.group(1)
+    name = hashlib.sha1(url.encode()).hexdigest()[:16] + ".woff2"
+    dest = v / "woff2" / name
+    if not dest.exists():
+        urllib.request.urlretrieve(url, dest)
+    return f"url(woff2/{name})"
+out = re.sub(r"url\((https://fonts\.gstatic\.com/[^)]+)\)", fetch, css)
+(v / "viewfinder-fonts.css").write_text(out)
+print(f"viewfinder-fonts.css: {len(re.findall(r'woff2/', out))} font files vendored")
+PY
+rm "$V/fonts/viewfinder-fonts.orig.css"
 echo "vendored: $(find "$V" -type f | wc -l | tr -d ' ') files, $(du -sh "$V" | cut -f1)"

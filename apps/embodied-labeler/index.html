@@ -11,25 +11,21 @@
     <link rel="stylesheet" href="assets/console/tailwind.css?v=1">
     <link href="/vendor/font-awesome/css/font-awesome.min.css" rel="stylesheet">
     <link href="/vendor/fonts/plex.css" rel="stylesheet">
+    <!-- Viewfinder instrument fonts (JetBrains Mono + Noto Sans SC), vendored offline -->
+    <link href="/vendor/fonts/viewfinder-fonts.css" rel="stylesheet">
     <link rel="stylesheet" href="assets/embodied/embodied.css?v=31">
     <link rel="stylesheet" href="assets/console/console.css?v=5">
-    <!-- 星聚 Liquid Glass skin (additive; preserves all chassis behaviour) -->
-    <link rel="stylesheet" href="/vendor/glass/tokens.css">
-    <link rel="stylesheet" href="/vendor/glass/glass.css">
-    <link rel="stylesheet" href="assets/console/labeler-glass.css?v=4">
+    <!-- 星聚 Viewfinder skin (additive; replaces the Liquid Glass layer) -->
+    <link rel="stylesheet" href="assets/console/viewfinder.css?v=2">
 </head>
 <body class="embodied-page console font-sans antialiased">
-    <div class="glass-backdrop" aria-hidden="true"></div>
     <div class="console-chassis">
         <header class="console-topbar glass">
-            <a class="topbar-brand" href="/app/">星聚 <span style="color:var(--ds-accent)">·</span> 具身平台</a>
+            <a class="topbar-brand vf-brand" href="/app/"><span class="vf-brand-zh">星聚</span><span class="vf-brand-dot" aria-hidden="true"></span><span class="vf-brand-mark">[ Labeler ]</span></a>
             <nav class="app-switcher" aria-label="工作区">
                 <a href="/app/">运营台</a>
                 <span aria-current="page">标注台</span>
             </nav>
-            <button id="cc-toggle" class="cc-toggle" type="button" aria-label="打开控制中心">
-                <i class="fa fa-sliders" aria-hidden="true"></i> 控制中心
-            </button>
         </header>
         <aside class="console-tree glass" aria-label="数据层级">
             <div class="console-rail-section">
@@ -50,6 +46,11 @@
             </div>
             <section id="video-section" class="embodied-video-card">
                 <div id="video-frame" class="relative flex justify-center embodied-video-frame" data-player-state="loading">
+                    <!-- Viewfinder corner-brackets — camera framing on the footage -->
+                    <div class="vf-corner vf-corner-tl" aria-hidden="true"></div>
+                    <div class="vf-corner vf-corner-tr" aria-hidden="true"></div>
+                    <div class="vf-corner vf-corner-bl" aria-hidden="true"></div>
+                    <div class="vf-corner vf-corner-br" aria-hidden="true"></div>
                     <!-- muted: episode clips have no audio track; without it Chrome's power
                          policy pauses "video-only background media" mid-playback. -->
                     <video id="video" preload="auto" muted
@@ -169,9 +170,11 @@
 
                 <!-- Scrub bar with hover-preview thumbnail -->
                 <div class="mt-4 relative">
-                    <div id="scrub-bar" class="h-2 bg-zinc-800 rounded-full relative cursor-pointer group">
+                    <div id="scrub-bar" role="slider" tabindex="0" aria-label="播放进度（左右方向键逐帧，Shift 十帧，Home/End 到片段首尾）"
+                         aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="帧 0"
+                         class="h-2 bg-zinc-800 rounded-full relative cursor-pointer group">
                         <!-- baseline width:100% + scaleX(pct) avoids per-frame layout on timeupdate (was thrashing at 60Hz) -->
-                        <div id="scrub-fill" class="absolute inset-y-0 left-0 bg-accent rounded-full shadow-[0_0_8px_rgba(255,90,54,0.4)]"></div>
+                        <div id="scrub-fill" class="absolute inset-y-0 left-0 bg-accent rounded-full"></div>
                         <div id="scrub-head" class="absolute top-1/2 w-4 h-4 bg-light rounded-full ring-2 ring-accent shadow-lg"></div>
                     </div>
                     <!-- Floating frame preview that follows the cursor over the scrub bar -->
@@ -397,61 +400,8 @@
             </div>
         </div>
     </div>
-    <!-- 控制中心 · Control Center (glass overlay; opened from the top bar) -->
-    <div id="cc-scrim" class="cc-scrim" hidden>
-      <div class="cc-panel" role="dialog" aria-label="控制中心">
-        <div class="cc-title">控制中心 · Control Center</div>
-        <div class="cc-grid">
-          <div class="cc-tile wide cc-media">
-            <div class="cc-media-art"><i class="fa fa-film" aria-hidden="true"></i></div>
-            <div class="cc-media-meta">
-              <div class="cc-media-title" id="cc-ep-title">演示回合 Demo episode</div>
-              <div class="cc-media-sub" id="cc-ep-sub">—</div>
-            </div>
-          </div>
-          <div class="cc-tile wide">
-            <div class="cc-tile-label"><i class="fa fa-tint"></i> 玻璃折射 Refraction</div>
-            <div class="cc-seg" data-cc="refract">
-              <button type="button" data-value="off">关</button>
-              <button type="button" data-value="light">轻</button>
-              <button type="button" data-value="standard">标准</button>
-              <button type="button" data-value="strong">强</button>
-            </div>
-          </div>
-          <div class="cc-tile">
-            <div class="cc-tile-label"><i class="fa fa-th"></i> 密度</div>
-            <div class="cc-seg" data-cc="density">
-              <button type="button" data-value="comfortable">舒适</button>
-              <button type="button" data-value="compact">紧凑</button>
-            </div>
-          </div>
-          <div class="cc-tile">
-            <div class="cc-tile-label"><i class="fa fa-eye"></i> 专注</div>
-            <div class="cc-toggle-tile">
-              <span style="font-size:12px;color:var(--t3)">暗化背景</span>
-              <button id="cc-focus" class="cc-switch" type="button" aria-pressed="false" aria-label="专注模式"></button>
-            </div>
-          </div>
-          <div class="cc-tile wide">
-            <div class="cc-tile-label"><i class="fa fa-picture-o"></i> 背景 Backdrop</div>
-            <div class="cc-seg" data-cc="backdrop">
-              <button type="button" data-value="graphite">石墨</button>
-              <button type="button" data-value="midnight">午夜</button>
-              <button type="button" data-value="ember">暖橙</button>
-            </div>
-          </div>
-          <div class="cc-tile wide">
-            <div class="cc-tile-label"><i class="fa fa-sun-o"></i> 亮度 Brightness</div>
-            <input id="cc-bright" class="cc-slider" type="range" min="50" max="130" value="100" aria-label="背景亮度">
-          </div>
-        </div>
-      </div>
-    </div>
 
-    <script src="assets/embodied/embodied.js?v=34" type="module"></script>
+    <script src="assets/embodied/embodied.js?v=35" type="module"></script>
     <script src="assets/console/embodied-console.js?v=2" type="module"></script>
-    <!-- 星聚 Liquid Glass: refraction engine + control-center glue (additive) -->
-    <script src="/vendor/glass/refract.js"></script>
-    <script src="assets/console/labeler-glass.js?v=2" type="module"></script>
 </body>
 </html>
