@@ -54,6 +54,29 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def require_finite_numbers(value: Any, *, path: str = "$") -> None:
+    """Recursively validate that every float inside nested dict/list/tuple/set
+    structures is finite.  Non-finite floats (Infinity, -Infinity, NaN) are
+    rejected with a ``ValueError`` that names the traversal path so the caller
+    gets an actionable 422 detail.
+
+    Plain ``int`` values pass through — they cannot represent non-finite
+    magnitudes — as do ``str``, ``bool``, ``None``, and other non-numeric types.
+    """
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(
+                f"float value at {path} must be finite (Infinity and NaN are not allowed)"
+            )
+    elif isinstance(value, dict):
+        for key, val in value.items():
+            require_finite_numbers(val, path=f"{path}.{key!s}")
+    elif isinstance(value, (list, tuple, set)):
+        for i, item in enumerate(value):
+            require_finite_numbers(item, path=f"{path}[{i}]")
+    # int, str, bool, None, bytes, UUID, datetime, … are all safe.
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -562,6 +585,17 @@ class ObjectCreatedPayload(EventModel):
     first_click_xy: tuple[float, float] | None = None
     drawn_with: Literal["mouse", "hotkey", "sam_click", "sam_text", "tracker"] = "mouse"
 
+    @field_validator("attributes")
+    @classmethod
+    def _finite_attributes(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Reject NaN/Infinity anywhere inside the free-form attributes dict,
+        including nested lists and objects.  Without this guard a client can
+        bypass the scalar-field ``allow_inf_nan=False`` protections by hiding
+        non-finite floats inside ``attributes``, which would still crash
+        ``json.dump(allow_nan=False)`` in the storage backends (500)."""
+        require_finite_numbers(value, path="attributes")
+        return value
+
     @field_validator("first_click_xy")
     @classmethod
     def _finite_first_click_xy(cls, value: tuple[float, float] | None) -> tuple[float, float] | None:
@@ -594,6 +628,13 @@ class AttributeChangedPayload(EventModel):
     event_type: Literal["attribute.changed"] = "attribute.changed"
     client_object_id: UUID
     attributes: dict[str, Any]
+
+    @field_validator("attributes")
+    @classmethod
+    def _finite_attributes(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Reject NaN/Infinity anywhere inside the free-form attributes dict."""
+        require_finite_numbers(value, path="attributes")
+        return value
 
 
 class ActionUndoPayload(EventModel):
