@@ -177,6 +177,45 @@ def test_unknown_task_and_issue_code_are_rejected(tmp_path, monkeypatch):
     )
     assert bad_task.status_code == 422
 
+
+def _review_attempt(client: TestClient, attempt_id: str, decision: str = "reject") -> dict:
+    response = client.patch(
+        f"/api/embodied-platform/collection-attempts/{attempt_id}/review",
+        headers=_headers("reviewer", "reviewer-a"),
+        json={"decision": decision, "check_results": [], "issue_codes": [], "notes": ""},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_all_rejected_attempts_do_not_produce_ready_for_review(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    run = _create_run(client)
+    for i in range(1, 7):
+        attempt = _add_attempt(client, run["id"], "task_01", i)
+        _review_attempt(client, attempt["id"], decision="reject")
+
+    progress = client.get(f"/api/embodied-platform/collection-runs/{run['id']}/progress").json()
+    task = next(t for t in progress["tasks"] if t["task_id"] == "task_01")
+    assert task["accepted_count"] == 0
+    assert task["status"] != "ready_for_review"
+
+
+def test_exhausted_rejected_attempts_produce_blocked_not_ready_for_review(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    run = _create_run(client)
+    for i in range(1, 9):
+        attempt = _add_attempt(client, run["id"], "task_01", i)
+        _review_attempt(client, attempt["id"], decision="reject")
+
+    progress = client.get(f"/api/embodied-platform/collection-runs/{run['id']}/progress").json()
+    task = next(t for t in progress["tasks"] if t["task_id"] == "task_01")
+    assert task["accepted_count"] == 0
+    assert task["remaining_attempts"] == 0
+    assert task["status"] == "blocked"
+    assert progress["blocked_task_count"] >= 1
+    assert progress["status"] == "blocked"
+
     attempt = _add_attempt(client, run["id"], "task_04", 1)
     bad_issue = client.patch(
         f"/api/embodied-platform/collection-attempts/{attempt['id']}/review",

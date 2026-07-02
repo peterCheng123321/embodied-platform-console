@@ -31,7 +31,7 @@ ISSUE_CODES = [
 ]
 
 TASK_IDS = [f"task_{index:02d}" for index in range(1, 9)]
-ATTEMPT_UPLOADED_STATUSES = {"uploaded", "ready_for_review", "accepted", "rejected", "rework"}
+ATTEMPT_UPLOADED_STATUSES = {"uploaded", "ready_for_review", "accepted"}
 
 
 @dataclass(frozen=True)
